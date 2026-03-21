@@ -1,4 +1,4 @@
-const CACHE_NAME = "luku-shell-v1";
+const CACHE_NAME = "luku-shell-v2";
 const SHELL_ASSETS = ["/", "/history", "/analytics", "/settings"];
 
 self.addEventListener("install", (event) => {

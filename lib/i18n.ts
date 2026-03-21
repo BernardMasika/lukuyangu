@@ -143,6 +143,10 @@ const t: Record<string, { sw: string; en: string }> = {
   "install.button": { sw: "Sakinisha", en: "Install" },
   "install.settingsBtn": { sw: "Sakinisha Programu", en: "Install App" },
   "install.installed": { sw: "Programu imesanikishwa", en: "App is installed" },
+  "install.uninstallHint": {
+    sw: "Ondoa kupitia Mipangilio ya simu > Programu > Luku Yangu",
+    en: "Uninstall via phone Settings > Apps > Luku Yangu",
+  },
 
   // Reminder
   "reminder.title": { sw: "Kumbusho la Kila Siku", en: "Daily Reminder" },

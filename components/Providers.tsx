@@ -66,8 +66,11 @@ export function Providers({ children }: { children: ReactNode }) {
     if (savedTheme) setThemeState(savedTheme);
     setMounted(true);
 
-    // Check if already installed
-    if (window.matchMedia("(display-mode: standalone)").matches) {
+    // Check if already installed (standalone mode or previously accepted)
+    if (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      localStorage.getItem("luku-installed") === "1"
+    ) {
       setIsInstalled(true);
     }
 
@@ -103,6 +106,7 @@ export function Providers({ children }: { children: ReactNode }) {
     const installedHandler = () => {
       setIsInstalled(true);
       setCanInstall(false);
+      localStorage.setItem("luku-installed", "1");
     };
     window.addEventListener("appinstalled", installedHandler);
 
@@ -134,8 +138,11 @@ export function Providers({ children }: { children: ReactNode }) {
     if (outcome === "accepted") {
       setCanInstall(false);
       setIsInstalled(true);
+      localStorage.setItem("luku-installed", "1");
     }
     deferredPrompt.current = null;
+    // Dismiss banner regardless of outcome (don't nag)
+    localStorage.setItem("luku-install-dismissed", "1");
   };
 
   if (!mounted) {

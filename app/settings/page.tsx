@@ -229,24 +229,28 @@ export default function Settings() {
 
       {/* Install App */}
       {(canInstall || isInstalled) && (
-        <button
-          onClick={canInstall ? promptInstall : undefined}
-          disabled={isInstalled}
-          className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-medium transition-colors dark:border-zinc-700 dark:bg-zinc-900 disabled:opacity-60"
-        >
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           {isInstalled ? (
-            <span className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              {tr("install.installed", lang)}
-            </span>
+            <>
+              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-sm font-medium">{tr("install.installed", lang)}</span>
+              </div>
+              <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+                {tr("install.uninstallHint", lang)}
+              </p>
+            </>
           ) : (
-            <span className="text-[#003399] dark:text-blue-400">
+            <button
+              onClick={promptInstall}
+              className="w-full text-sm font-medium text-[#003399] dark:text-blue-400"
+            >
               {tr("install.settingsBtn", lang)}
-            </span>
+            </button>
           )}
-        </button>
+        </div>
       )}
 
       {/* Export */}
