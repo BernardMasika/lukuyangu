@@ -5,6 +5,7 @@ import {
   useContext,
   useState,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import type { Lang } from "@/lib/i18n";
@@ -13,7 +14,7 @@ import type { Lang } from "@/lib/i18n";
 const LangContext = createContext<{
   lang: Lang;
   setLang: (l: Lang) => void;
-}>({ lang: "sw", setLang: () => {} });
+}>({ lang: "en", setLang: () => {} });
 
 export function useLang() {
   return useContext(LangContext);
@@ -29,10 +30,31 @@ export function useTheme() {
   return useContext(ThemeContext);
 }
 
+// --- Install Prompt Context ---
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+const InstallContext = createContext<{
+  canInstall: boolean;
+  isInstalled: boolean;
+  promptInstall: () => Promise<void>;
+}>({ canInstall: false, isInstalled: false, promptInstall: async () => {} });
+
+export function useInstall() {
+  return useContext(InstallContext);
+}
+
 export function Providers({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("sw");
+  const [lang, setLangState] = useState<Lang>("en");
   const [theme, setThemeState] = useState<"dark" | "light">("dark");
   const [mounted, setMounted] = useState(false);
+
+  // Install prompt state
+  const [canInstall, setCanInstall] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     const savedLang = localStorage.getItem("luku-lang") as Lang | null;
@@ -44,10 +66,50 @@ export function Providers({ children }: { children: ReactNode }) {
     if (savedTheme) setThemeState(savedTheme);
     setMounted(true);
 
-    // Register service worker
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    // Check if already installed
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setIsInstalled(true);
     }
+
+    // Register service worker and re-schedule reminder if active
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").then(() => {
+        // Re-send reminder schedule to SW on every load (SW may have restarted)
+        const reminder = localStorage.getItem("luku-reminder");
+        if (reminder) {
+          try {
+            const { enabled, time, title, body } = JSON.parse(reminder);
+            if (enabled && time && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({
+                type: "SCHEDULE_REMINDER",
+                time,
+                title,
+                body,
+              });
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }).catch(() => {});
+    }
+
+    // Capture install prompt
+    const handler = (e: Event) => {
+      e.preventDefault();
+      deferredPrompt.current = e as BeforeInstallPromptEvent;
+      setCanInstall(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+
+    const installedHandler = () => {
+      setIsInstalled(true);
+      setCanInstall(false);
+    };
+    window.addEventListener("appinstalled", installedHandler);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", installedHandler);
+    };
   }, []);
 
   useEffect(() => {
@@ -65,6 +127,17 @@ export function Providers({ children }: { children: ReactNode }) {
     localStorage.setItem("luku-theme", t);
   };
 
+  const promptInstall = async () => {
+    if (!deferredPrompt.current) return;
+    await deferredPrompt.current.prompt();
+    const { outcome } = await deferredPrompt.current.userChoice;
+    if (outcome === "accepted") {
+      setCanInstall(false);
+      setIsInstalled(true);
+    }
+    deferredPrompt.current = null;
+  };
+
   if (!mounted) {
     return <div className="min-h-screen bg-black" />;
   }
@@ -72,7 +145,9 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <LangContext.Provider value={{ lang, setLang }}>
       <ThemeContext.Provider value={{ theme, setTheme }}>
-        {children}
+        <InstallContext.Provider value={{ canInstall, isInstalled, promptInstall }}>
+          {children}
+        </InstallContext.Provider>
       </ThemeContext.Provider>
     </LangContext.Provider>
   );

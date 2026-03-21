@@ -134,6 +134,35 @@ const t: Record<string, { sw: string; en: string }> = {
   "settings.light": { sw: "Mwanga", en: "Light" },
   "settings.saved": { sw: "Imehifadhiwa!", en: "Saved!" },
 
+  // Install banner
+  "install.title": { sw: "Sakinisha Luku Yangu", en: "Install Luku Yangu" },
+  "install.message": {
+    sw: "Sakinisha kwa ufikiaji wa haraka na vikumbusho vya kila siku.",
+    en: "Install for quick access and daily logging reminders.",
+  },
+  "install.button": { sw: "Sakinisha", en: "Install" },
+  "install.settingsBtn": { sw: "Sakinisha Programu", en: "Install App" },
+  "install.installed": { sw: "Programu imesanikishwa", en: "App is installed" },
+
+  // Reminder
+  "reminder.title": { sw: "Kumbusho la Kila Siku", en: "Daily Reminder" },
+  "reminder.description": {
+    sw: "Pokea kumbusho la kusajili usomaji wa mita kila siku.",
+    en: "Get a daily reminder to log your meter reading.",
+  },
+  "reminder.time": { sw: "Wakati wa kumbusho", en: "Reminder time" },
+  "reminder.enabled": { sw: "Kumbusho limewashwa", en: "Reminder enabled" },
+  "reminder.disabled": { sw: "Kumbusho limezimwa", en: "Reminder disabled" },
+  "reminder.permissionDenied": {
+    sw: "Ruhusa ya arifa imekataliwa. Ruhusu arifa kwenye mipangilio ya kivinjari.",
+    en: "Notification permission denied. Please allow notifications in browser settings.",
+  },
+  "reminder.notifTitle": { sw: "Luku Yangu", en: "Luku Yangu" },
+  "reminder.notifBody": {
+    sw: "Usisahau kusajili usomaji wako wa mita leo!",
+    en: "Don't forget to log your meter reading today!",
+  },
+
   // Common
   "common.loading": { sw: "Inapakia...", en: "Loading..." },
   "common.error": { sw: "Hitilafu imetokea", en: "An error occurred" },

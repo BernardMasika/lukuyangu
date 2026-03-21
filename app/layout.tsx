@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import Nav from "@/components/Nav";
+import InstallBanner from "@/components/InstallBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,7 +40,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="sw"
+      lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark`}
     >
       <head>
@@ -47,6 +48,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-gray-50 text-zinc-900 antialiased dark:bg-black dark:text-white">
         <Providers>
+          <InstallBanner />
           <main className="mx-auto max-w-lg pb-20 px-4 pt-6">{children}</main>
           <Nav />
         </Providers>
