@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Luku Yangu
+
+Personal prepaid electricity (LUKU) consumption tracker for a household in Dar es Salaam, Tanzania. Track meter readings, token purchases, consumption trends, and get depletion predictions — all from your phone.
+
+## Features
+
+- **Dashboard** — today's usage, 7-day average, monthly spending, and burn rate predictions
+- **Quick Log** — log meter readings with optional backdated timestamps via preset chips (30min ago, 1h ago, etc.)
+- **Purchase Tracking** — log every LUKU token purchase with units, amount (TZS), and payment method
+- **Analytics** — daily/weekly/monthly consumption charts, cost summary, month-over-month comparison, and anomaly detection (flags weeks with >=20% deviation)
+- **History** — view, edit, and delete all readings and purchases with inline editing
+- **Daily Reminders** — push notification reminders to log your meter reading (configurable time)
+- **PWA Installable** — install on your phone for quick access, works offline for cached pages
+- **Bilingual** — English (default) and Swahili, switchable in settings
+- **Dark/Light Theme** — dark mode default, toggle in settings
+- **CSV Export** — download all data as CSV from settings
+- **AI Summary** — copy a text summary of your data for pasting into Claude, ChatGPT, etc.
+
+## Tech Stack
+
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
+- **Tailwind CSS v4** (CSS-based config, class-based dark mode via `@custom-variant`)
+- **Turso (libSQL)** for persistence (free tier)
+- **Recharts** for analytics charts
+- **Vercel** for deployment
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Node.js 20+
+- A [Turso](https://turso.tech) database
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Clone the repo and install dependencies:
+   ```bash
+   npm install
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. Create `.env.local` with your Turso credentials:
+   ```
+   TURSO_DATABASE_URL=libsql://your-db.turso.io
+   TURSO_AUTH_TOKEN=your-token
+   ```
 
-## Learn More
+3. Start the dev server:
+   ```bash
+   npm run dev
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+4. Initialize the database by visiting:
+   ```
+   http://localhost:3000/api/setup
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+5. Open [http://localhost:3000](http://localhost:3000) and start logging.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
+Deploy to Vercel and set the two environment variables (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) in project settings. The database tables only need to be created once via `/api/setup`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Author
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Made with love by [Bernard Masika](https://www.bernardmasika.com)
