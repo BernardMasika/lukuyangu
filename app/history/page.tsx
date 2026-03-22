@@ -1,51 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useLang } from "@/components/Providers";
+import { useState } from "react";
+import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
 import { formatDateTimeEAT } from "@/lib/utils";
 import ConfirmModal from "@/components/ConfirmModal";
 import TimePicker from "@/components/TimePicker";
 
-interface Reading {
-  id: number;
-  reading: number;
-  note: string;
-  created_at: string;
-}
-
-interface Purchase {
-  id: number;
-  units: number;
-  amount_tzs: number;
-  note: string;
-  created_at: string;
-}
-
 export default function History() {
   const { lang } = useLang();
+  const { readings, purchases, refresh } = useData();
   const [tab, setTab] = useState<"readings" | "purchases">("readings");
-  const [readings, setReadings] = useState<Reading[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
     type: "reading" | "purchase";
     id: number;
   } | null>(null);
   const [editId, setEditId] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
-
-  const fetchData = useCallback(async () => {
-    const [rRes, pRes] = await Promise.all([
-      fetch("/api/readings"),
-      fetch("/api/purchases"),
-    ]);
-    setReadings(await rRes.json());
-    setPurchases(await pRes.json());
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -55,16 +26,16 @@ export default function History() {
         : `/api/purchases/${deleteTarget.id}`;
     await fetch(endpoint, { method: "DELETE" });
     setDeleteTarget(null);
-    fetchData();
+    refresh();
   };
 
-  const startEdit = (type: "reading" | "purchase", item: Reading | Purchase) => {
+  const startEdit = (type: "reading" | "purchase", item: (typeof readings)[0] | (typeof purchases)[0]) => {
     setEditId(item.id);
     if (type === "reading") {
-      const r = item as Reading;
+      const r = item as (typeof readings)[0];
       setEditValues({ reading: String(r.reading), note: r.note, created_at: r.created_at });
     } else {
-      const p = item as Purchase;
+      const p = item as (typeof purchases)[0];
       setEditValues({
         units: String(p.units),
         amount_tzs: String(p.amount_tzs),
@@ -95,11 +66,11 @@ export default function History() {
       body: JSON.stringify(body),
     });
     setEditId(null);
-    fetchData();
+    refresh();
   };
 
   const readingsWithDelta = readings.map((r, i) => {
-    if (i === readings.length - 1) return { ...r, delta: null };
+    if (i === readings.length - 1) return { ...r, delta: null as number | null };
     const next = readings[i + 1];
     const delta = next.reading > r.reading ? next.reading - r.reading : null;
     return { ...r, delta };

@@ -1,44 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useLang } from "@/components/Providers";
+import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
 import StatCard from "@/components/StatCard";
 import QuickLog from "@/components/QuickLog";
 import Nudge from "@/components/Nudge";
 
-interface Stats {
-  todayUsage: number | null;
-  avg7: number | null;
-  spentThisMonth: number;
-  burnRate: number | null;
-  latestReading: number | null;
-  daysRemaining: number | null;
-  readingCount: number;
-  hasLoggedToday: boolean;
-}
-
 export default function Dashboard() {
   const { lang } = useLang();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/stats");
-      const data = await res.json();
-      setStats(data);
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+  const { stats, loading } = useData();
 
   if (loading) {
     return (
@@ -121,7 +92,7 @@ export default function Dashboard() {
       )}
 
       {/* Quick Log */}
-      <QuickLog onSaved={fetchStats} />
+      <QuickLog />
 
       {/* Log Purchase Button */}
       <Link

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useLang } from "@/components/Providers";
+import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
 import TimePicker from "@/components/TimePicker";
 
 export default function LogPurchase() {
   const { lang } = useLang();
+  const { refresh } = useData();
   const router = useRouter();
   const [units, setUnits] = useState("");
   const [amount, setAmount] = useState("");
@@ -31,6 +32,7 @@ export default function LogPurchase() {
           ...(when ? { created_at: when } : {}),
         }),
       });
+      refresh();
       router.push("/");
     } finally {
       setSaving(false);

@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useRef,
+  useCallback,
   type ReactNode,
 } from "react";
 import type { Lang } from "@/lib/i18n";
@@ -46,10 +47,101 @@ export function useInstall() {
   return useContext(InstallContext);
 }
 
+// --- Data Cache Context ---
+interface Stats {
+  todayUsage: number | null;
+  avg7: number | null;
+  spentThisMonth: number;
+  burnRate: number | null;
+  latestReading: number | null;
+  daysRemaining: number | null;
+  readingCount: number;
+  hasLoggedToday: boolean;
+}
+
+interface Reading {
+  id: number;
+  reading: number;
+  note: string;
+  created_at: string;
+}
+
+interface Purchase {
+  id: number;
+  units: number;
+  amount_tzs: number;
+  note: string;
+  created_at: string;
+}
+
+interface Change {
+  weekStart: string;
+  consumption: number;
+  baseline: number;
+  deviation: number;
+  direction: "above" | "below";
+}
+
+interface DataContextValue {
+  stats: Stats | null;
+  readings: Reading[];
+  purchases: Purchase[];
+  changes: Change[];
+  loading: boolean;
+  refresh: () => Promise<void>;
+}
+
+const DataContext = createContext<DataContextValue>({
+  stats: null,
+  readings: [],
+  purchases: [],
+  changes: [],
+  loading: true,
+  refresh: async () => {},
+});
+
+export function useData() {
+  return useContext(DataContext);
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
   const [theme, setThemeState] = useState<"dark" | "light">("dark");
   const [mounted, setMounted] = useState(false);
+
+  // Data cache state
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [readings, setReadings] = useState<Reading[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [changes, setChanges] = useState<Change[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+
+  const refreshData = useCallback(async () => {
+    try {
+      const [statsRes, readingsRes, purchasesRes, changesRes] =
+        await Promise.all([
+          fetch("/api/stats"),
+          fetch("/api/readings"),
+          fetch("/api/purchases"),
+          fetch("/api/changes"),
+        ]);
+      const [statsData, readingsData, purchasesData, changesData] =
+        await Promise.all([
+          statsRes.json(),
+          readingsRes.json(),
+          purchasesRes.json(),
+          changesRes.json(),
+        ]);
+      setStats(statsData);
+      setReadings(readingsData);
+      setPurchases(purchasesData);
+      setChanges(changesData.changes || []);
+    } catch {
+      // silent
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
 
   // Install prompt state
   const [canInstall, setCanInstall] = useState(false);
@@ -65,6 +157,9 @@ export function Providers({ children }: { children: ReactNode }) {
     if (savedLang) setLangState(savedLang);
     if (savedTheme) setThemeState(savedTheme);
     setMounted(true);
+
+    // Fetch all data once on app load
+    refreshData();
 
     // Check if already installed (standalone mode or previously accepted)
     if (
@@ -153,7 +248,18 @@ export function Providers({ children }: { children: ReactNode }) {
     <LangContext.Provider value={{ lang, setLang }}>
       <ThemeContext.Provider value={{ theme, setTheme }}>
         <InstallContext.Provider value={{ canInstall, isInstalled, promptInstall }}>
-          {children}
+          <DataContext.Provider
+            value={{
+              stats,
+              readings,
+              purchases,
+              changes,
+              loading: dataLoading,
+              refresh: refreshData,
+            }}
+          >
+            {children}
+          </DataContext.Provider>
         </InstallContext.Provider>
       </ThemeContext.Provider>
     </LangContext.Provider>

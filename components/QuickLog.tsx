@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useLang } from "./Providers";
+import { useLang, useData } from "./Providers";
 import { tr } from "@/lib/i18n";
 import TimePicker from "./TimePicker";
 
-export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
+export default function QuickLog() {
   const { lang } = useLang();
+  const { refresh } = useData();
   const [reading, setReading] = useState("");
   const [note, setNote] = useState("");
   const [when, setWhen] = useState("");
@@ -36,7 +37,7 @@ export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
       setReading("");
       setNote("");
       setWhen("");
-      onSaved?.();
+      refresh();
 
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => setToast(null), 5000);
@@ -50,7 +51,7 @@ export default function QuickLog({ onSaved }: { onSaved?: () => void }) {
     await fetch(`/api/readings/${toast.id}`, { method: "DELETE" });
     setToast(null);
     if (timerRef.current) clearTimeout(timerRef.current);
-    onSaved?.();
+    refresh();
   };
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useLang } from "@/components/Providers";
+import { useState } from "react";
+import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
 import { formatDateEAT } from "@/lib/utils";
 import ConsumptionChart from "@/components/ConsumptionChart";
@@ -9,47 +9,14 @@ import StatCard from "@/components/StatCard";
 
 type Tab = "daily" | "weekly" | "monthly";
 
-interface Reading {
-  id: number;
-  reading: number;
-  created_at: string;
-}
-
-interface Change {
-  weekStart: string;
-  consumption: number;
-  baseline: number;
-  deviation: number;
-  direction: "above" | "below";
-}
-
 export default function Analytics() {
   const { lang } = useLang();
+  const { readings: rawReadings, changes, purchases } = useData();
   const [tab, setTab] = useState<Tab>("daily");
-  const [readings, setReadings] = useState<Reading[]>([]);
-  const [changes, setChanges] = useState<Change[]>([]);
-  const [purchases, setPurchases] = useState<
-    { units: number; amount_tzs: number; created_at: string }[]
-  >([]);
   const [copying, setCopying] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    const [rRes, cRes, pRes] = await Promise.all([
-      fetch("/api/readings"),
-      fetch("/api/changes"),
-      fetch("/api/purchases"),
-    ]);
-    const rData = await rRes.json();
-    const cData = await cRes.json();
-    const pData = await pRes.json();
-    setReadings([...rData].reverse());
-    setChanges(cData.changes || []);
-    setPurchases(pData);
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Analytics needs readings in chronological order (oldest first)
+  const readings = [...rawReadings].reverse();
 
   const buildDailyData = () => {
     const days = new Map<string, { first: number; last: number }>();
