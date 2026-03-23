@@ -12,12 +12,16 @@ const t: Record<string, { sw: string; en: string }> = {
   "dashboard.today": { sw: "Matumizi ya Leo", en: "Today's Usage" },
   "dashboard.avg7": { sw: "Wastani (siku 7)", en: "Avg (7 days)" },
   "dashboard.spent": { sw: "Matumizi ya Mwezi", en: "Spent This Month" },
+  "dashboard.lastPurchase": { sw: "Ununuzi wa Mwisho", en: "Last Purchase" },
+  "dashboard.lasted": { sw: "Ilidumu ~{days} siku", en: "Lasted ~{days} days" },
+  "dashboard.lasting": { sw: "Siku {days} hadi sasa", en: "Day {days} so far" },
+  "dashboard.noPurchase": { sw: "Hakuna ununuzi bado", en: "No purchases yet" },
   "dashboard.kwh": { sw: "kWh", en: "kWh" },
   "dashboard.units": { sw: "vitengo", en: "units" },
   "dashboard.days": { sw: "siku", en: "days" },
 
   // Quick log
-  "quicklog.title": { sw: "Sajili Usomaji", en: "Log Reading" },
+  "quicklog.title": { sw: "Sajili Usomaji", en: "Log a Reading" },
   "quicklog.placeholder": { sw: "Usomaji wa mita (kWh)", en: "Meter reading (kWh)" },
   "quicklog.save": { sw: "Hifadhi", en: "Save" },
   "quicklog.saved": { sw: "Imehifadhiwa!", en: "Saved!" },
@@ -38,8 +42,8 @@ const t: Record<string, { sw: string; en: string }> = {
 
   // Nudges
   "nudge.lowBalance": {
-    sw: "~{units} vitengo vilivyobaki — vitadumu ~{days} siku kwa kiwango chako cha sasa.",
-    en: "~{units} units left — lasts ~{days} days at your current rate.",
+    sw: "~{units} vitengo vilivyobaki, vitadumu ~{days} siku kwa kiwango chako cha sasa.",
+    en: "~{units} units left, lasts ~{days} days at your current rate.",
   },
   "nudge.logReminder": {
     sw: "Hujasajili leo",
@@ -62,8 +66,8 @@ const t: Record<string, { sw: string; en: string }> = {
     en: "At your current usage (~{rate} kWh/day), your {units} remaining units should last ~{days} days",
   },
   "nudge.noPrediction": {
-    sw: "Hakuna data ya kutosha — sajili usomaji kila siku kwa siku chache kupata utabiri",
-    en: "Not enough data yet — log readings daily for a few days to get predictions",
+    sw: "Hakuna data ya kutosha, sajili usomaji kila siku kwa siku chache kupata utabiri",
+    en: "Not enough data yet, log readings daily for a few days to get predictions",
   },
   "nudge.noPurchases": {
     sw: "Sajili ununuzi wa LUKU kufuatilia matumizi",
@@ -75,9 +79,9 @@ const t: Record<string, { sw: string; en: string }> = {
   "purchase.units": { sw: "Vitengo vilivyopokelewa (kWh)", en: "Units received (kWh)" },
   "purchase.amount": { sw: "Kiasi kilicholipwa (TZS)", en: "Amount paid (TZS)" },
   "purchase.note": { sw: "Maelezo (hiari)", en: "Note (optional)" },
-  "purchase.when": { sw: "Wakati (hiari — sasa kwa chaguo-msingi)", en: "Time (optional — defaults to now)" },
+  "purchase.when": { sw: "Wakati (hiari, sasa kwa chaguo-msingi)", en: "Time (optional, defaults to now)" },
   "purchase.submit": { sw: "Hifadhi", en: "Save" },
-  "purchase.logBtn": { sw: "Sajili Ununuzi", en: "Log Purchase" },
+  "purchase.logBtn": { sw: "Sajili Ununuzi", en: "Log a Purchase" },
 
   // History
   "history.title": { sw: "Historia", en: "History" },
@@ -93,12 +97,106 @@ const t: Record<string, { sw: string; en: string }> = {
     en: "This action cannot be undone.",
   },
   "history.consumption": { sw: "Matumizi", en: "Consumption" },
+  "history.lasted": { sw: "Ilidumu ~{days} siku", en: "Lasted ~{days} days" },
+  "history.ongoingPurchase": { sw: "Siku {days} hadi sasa", en: "Day {days} so far" },
   "history.rate": { sw: "Kiwango", en: "Rate" },
   "history.noReadings": { sw: "Hakuna usomaji bado", en: "No readings yet" },
   "history.noPurchases": { sw: "Hakuna ununuzi bado", en: "No purchases yet" },
 
+  // Plan (Mipango)
+  "nav.plan": { sw: "Mipango", en: "Plan" },
+  "plan.title": { sw: "Mipango Yangu", en: "My Plan" },
+  "plan.description": {
+    sw: "Panga matumizi yako ya umeme, utabiri, mahesabu, na vidokezo kulingana na data yako.",
+    en: "Plan your electricity usage, predictions, calculations, and tips based on your data.",
+  },
+  "plan.dailyUsage": { sw: "Matumizi ya Kila Siku", en: "Your Daily Usage" },
+  "plan.dailyExplain": {
+    sw: "Hii inategemea usomaji {count} wa mwisho kwa siku {days}. Kadri unavyosajili mara nyingi, ndivyo utabiri unavyokuwa sahihi zaidi.",
+    en: "This is based on your last {count} readings over {days} days. The more often you log, the more accurate this gets.",
+  },
+  "plan.dailyNeedData": {
+    sw: "Sajili angalau usomaji 3 kwa siku 3 kuona matumizi yako ya kila siku. Haijalishi wakati gani, sajili tu unapoangalia mita.",
+    en: "Log at least 3 readings over 3 days to see your daily usage. It doesn't matter what time, just log when you check the meter.",
+  },
+  "plan.howLong": { sw: "Vitengo Vitadumu Kwa Muda Gani?", en: "How Long Will My Units Last?" },
+  "plan.howLongExplain": {
+    sw: "Kwa {rate} kWh/siku, vitengo {units} vyako vitadumu hadi takriban {date}.",
+    en: "At {rate} kWh/day, your {units} units should last until approximately {date}.",
+  },
+  "plan.howLongNeedData": {
+    sw: "Inahitaji usomaji zaidi kutabiri hili, endelea kusajili kila siku.",
+    en: "Need more readings to predict this, keep logging daily.",
+  },
+  "plan.calculator": { sw: "Kikokotoo cha Ununuzi", en: "Purchase Calculator" },
+  "plan.iHaveTzs": { sw: "Nina TZS", en: "I have TZS" },
+  "plan.iNeedDays": { sw: "Nahitaji siku", en: "I need days" },
+  "plan.unitsYouGet": { sw: "Vitengo utavyopata", en: "Units you'll get" },
+  "plan.daysItLasts": { sw: "Vitadumu siku", en: "That lasts" },
+  "plan.unitsNeeded": { sw: "Vitengo unavyohitaji", en: "Units you need" },
+  "plan.estimatedCost": { sw: "Gharama takriban", en: "Estimated cost" },
+  "plan.calcExplain": {
+    sw: "Kulingana na wastani wako wa TZS {rate}/kWh na matumizi ya {burn} kWh/siku.",
+    en: "Based on your average rate of TZS {rate}/kWh and daily usage of {burn} kWh/day.",
+  },
+  "plan.calcNeedPurchase": {
+    sw: "Sajili angalau ununuzi mmoja wa LUKU kufungua utabiri wa gharama.",
+    en: "Log at least one purchase to unlock cost predictions.",
+  },
+  "plan.calcNeedBurnRate": {
+    sw: "Inahitaji kiwango cha matumizi kwanza, sajili usomaji kwa siku chache.",
+    en: "Need a usage rate first, log readings for a few days.",
+  },
+  "analytics.todayBreakdown": { sw: "Matumizi ya Leo", en: "Today's Breakdown" },
+  "analytics.todayExplain": {
+    sw: "Hii inaonyesha kiasi ulichotumia wakati wa kila sehemu ya leo. Sajili usomaji kwa nyakati tofauti kuona picha kamili.",
+    en: "This shows how much you used during each part of today. Log readings at different times to see a fuller picture.",
+  },
+  "analytics.todayNeedMore": {
+    sw: "Sajili usomaji mwingine baadaye leo kuona matumizi yako ya leo. Jaribu kusajili asubuhi na jioni.",
+    en: "Log another reading later today to see your daily breakdown. Try logging once in the morning and once in the evening.",
+  },
+  "plan.tips": { sw: "Vidokezo", en: "Tips" },
+  "plan.tipStart": {
+    sw: "Anza kwa kusajili usomaji wa mita mara moja kwa siku, wakati wowote unafaa. Baada ya siku 3, utaanza kuona utabiri.",
+    en: "Start by logging your meter reading once a day, any time works. After 3 days, you'll start seeing predictions.",
+  },
+  "plan.tipNoPurchase": {
+    sw: "Sajili ununuzi wako wa LUKU ujao kufuatilia matumizi na gharama kwa kila kitengo.",
+    en: "Log your next LUKU purchase to track spending and cost per unit.",
+  },
+  "plan.tipGreatLogging": {
+    sw: "Unasajili vizuri sana! Utabiri wako una usahihi wa hali ya juu.",
+    en: "Great logging! Your predictions are highly accurate.",
+  },
+  "plan.tipLogMore": {
+    sw: "Jaribu kusajili angalau mara moja kwa siku kwa usahihi bora. Usomaji wa asubuhi na jioni unatoa matumizi bora ya kila siku.",
+    en: "Try logging at least once a day for better accuracy. Morning and evening readings give the best daily breakdown.",
+  },
+  "plan.tipLogOutages": {
+    sw: "Umeme ukikatika, sajili, inafanya utabiri wako wa matumizi kuwa sahihi zaidi.",
+    en: "If TANESCO cuts power, log it, it makes your usage predictions more accurate.",
+  },
+  "plan.tipGenerator": {
+    sw: "Hata kama nyumba yako ina jenereta, sajili kukatika kwa umeme. Mita ya LUKU haisomi umeme wa jenereta, kwa hivyo vitengo vyako vinadumu zaidi wakati wa kukatika, utabiri wako unajumuisha hili.",
+    en: "Even if your building has a generator, still log outages. Your LUKU meter doesn't count generator power, so your units last longer during cuts, your predictions already reflect this.",
+  },
+  "plan.tipGeneratorReminder": {
+    sw: "Kubadilisha kwa jenereta moja kwa moja kunaweza kukufanya usahau kukatika kwa TANESCO. Sajili kila wakati umeme unapokatika na kurudi ili matumizi yako yabaki sahihi.",
+    en: "Auto-switching to a generator can make you forget about TANESCO outages. Always log when power goes off and comes back so your usage tracking stays accurate.",
+  },
+  "plan.depletionDate": { sw: "Tarehe ya kuisha", en: "Depletion date" },
+  "plan.trendUp": { sw: "Matumizi yanaongezeka", en: "Usage is increasing" },
+  "plan.trendDown": { sw: "Matumizi yanapungua", en: "Usage is decreasing" },
+  "plan.trendSteady": { sw: "Matumizi yako ni thabiti", en: "Your usage is steady" },
+  "plan.daysLabel": { sw: "siku", en: "days" },
+
   // Analytics
   "analytics.title": { sw: "Uchambuzi", en: "Analytics" },
+  "analytics.description": {
+    sw: "Angalia matumizi yako yaliyopita, mienendo, gharama, na mabadiliko yaliyotokea.",
+    en: "Review your past usage, trends, costs, and changes that have already happened.",
+  },
   "analytics.daily": { sw: "Kila Siku", en: "Daily" },
   "analytics.weekly": { sw: "Kila Wiki", en: "Weekly" },
   "analytics.monthly": { sw: "Kila Mwezi", en: "Monthly" },
@@ -113,8 +211,8 @@ const t: Record<string, { sw: string; en: string }> = {
     en: "Your consumption has been steady.",
   },
   "analytics.needData": {
-    sw: "Endelea kusajili — ugunduzi wa mabadiliko utaanza baada ya wiki 5 za data.",
-    en: "Keep logging — change detection starts after 5 weeks of data.",
+    sw: "Endelea kusajili, ugunduzi wa mabadiliko utaanza baada ya wiki 5 za data.",
+    en: "Keep logging, change detection starts after 5 weeks of data.",
   },
   "analytics.copySummary": { sw: "Nakili Muhtasari kwa AI", en: "Copy Summary for AI" },
   "analytics.copied": {
@@ -166,6 +264,41 @@ const t: Record<string, { sw: string; en: string }> = {
     sw: "Usisahau kusajili usomaji wako wa mita leo!",
     en: "Don't forget to log your meter reading today!",
   },
+
+  // Time periods
+  "period.alfajiri": { sw: "Alfajiri", en: "Pre-dawn" },
+  "period.asubuhi": { sw: "Asubuhi", en: "Morning" },
+  "period.mchana": { sw: "Mchana", en: "Afternoon" },
+  "period.jioni": { sw: "Jioni", en: "Evening" },
+  "period.usiku": { sw: "Usiku", en: "Night" },
+
+  // Outages
+  "outage.title": { sw: "Kukatika kwa Umeme", en: "Power Outages" },
+  "outage.powerOut": { sw: "Umeme Umekatika", en: "Power is Out" },
+  "outage.powerBack": { sw: "Umeme Umerudi", en: "Power is Back" },
+  "outage.active": { sw: "Umeme umekatika sasa", en: "Power is currently out" },
+  "outage.since": { sw: "Tangu", en: "Since" },
+  "outage.whenOut": { sw: "Umeme ulikatika lini?", en: "When did power go out?" },
+  "outage.duration": { sw: "Muda", en: "Duration" },
+  "outage.hours": { sw: "masaa", en: "hours" },
+  "outage.minutes": { sw: "dakika", en: "min" },
+  "outage.totalMonth": { sw: "Jumla mwezi huu", en: "Total this month" },
+  "outage.count": { sw: "Kukatika", en: "Outages" },
+  "outage.avgDuration": { sw: "Wastani", en: "Average" },
+  "outage.noOutages": { sw: "Hakuna kukatika bado", en: "No outages yet" },
+  "outage.logPast": { sw: "Sajili kukatika kuliopita", en: "Log a past outage" },
+  "outage.start": { sw: "Ilianza", en: "Started" },
+  "outage.end": { sw: "Ilimalizika", en: "Ended" },
+  "outage.ongoing": { sw: "Inaendelea", en: "Ongoing" },
+  "history.outages": { sw: "Kukatika", en: "Outages" },
+  "analytics.byPeriod": { sw: "Matumizi kwa Wakati wa Siku", en: "Usage by Time of Day" },
+  "analytics.outages": { sw: "Kukatika kwa Umeme", en: "Power Outages" },
+  "analytics.periodNote": {
+    sw: "Kulingana na wakati usomaji uliporekodiwa",
+    en: "Based on when readings were logged",
+  },
+  "analytics.periodToday": { sw: "Leo", en: "Today" },
+  "analytics.periodAll": { sw: "Jumla", en: "All Time" },
 
   // Common
   "common.loading": { sw: "Inapakia...", en: "Loading..." },

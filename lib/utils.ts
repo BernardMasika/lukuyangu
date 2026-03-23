@@ -1,5 +1,27 @@
 export const TZ = "Africa/Dar_es_Salaam";
 
+export type TimePeriod = "alfajiri" | "asubuhi" | "mchana" | "jioni" | "usiku";
+
+/** Extract the hour (0-23) in EAT from an ISO string */
+export function getHourEAT(iso: string): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  return parseInt(parts.find((p) => p.type === "hour")?.value ?? "0");
+}
+
+/** Map an ISO timestamp to a Swahili time-of-day period (EAT) */
+export function getTimePeriod(iso: string): TimePeriod {
+  const h = getHourEAT(iso);
+  if (h >= 4 && h <= 5) return "alfajiri";
+  if (h >= 6 && h <= 11) return "asubuhi";
+  if (h >= 12 && h <= 15) return "mchana";
+  if (h >= 16 && h <= 18) return "jioni";
+  return "usiku"; // 19-3
+}
+
 export function formatDateEAT(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
     timeZone: TZ,
@@ -46,6 +68,28 @@ export function datetimeLocalToISO(local: string): string {
   return new Date(local + ":00+03:00").toISOString();
 }
 
+/** Sum outage durations (in days) that overlap a time window.
+ *  Clamps each outage to the window boundaries. Skips ongoing outages. */
+export function calcOutageDurationDays(
+  outages: { start_at: string; end_at: string | null }[],
+  windowStart: Date,
+  windowEnd: Date
+): number {
+  let totalMs = 0;
+  for (const o of outages) {
+    if (!o.end_at) continue; // skip ongoing
+    const oStart = new Date(o.start_at);
+    const oEnd = new Date(o.end_at);
+    // clamp to window
+    const clampedStart = oStart < windowStart ? windowStart : oStart;
+    const clampedEnd = oEnd > windowEnd ? windowEnd : oEnd;
+    if (clampedStart < clampedEnd) {
+      totalMs += clampedEnd.getTime() - clampedStart.getTime();
+    }
+  }
+  return totalMs / (1000 * 60 * 60 * 24);
+}
+
 /** Calculate consumption between two consecutive readings.
  *  LUKU meters count DOWN. If current < previous => consumption.
  *  If current > previous => top-up happened. */
@@ -68,9 +112,11 @@ export function calcConsumption(
 }
 
 /** Compute daily burn rate from readings over last 7 days.
- *  Returns null if insufficient data (<3 readings or <3 days). */
+ *  Returns null if insufficient data (<3 readings or <3 days).
+ *  If outages are provided, subtracts outage time from elapsed days. */
 export function calcBurnRate(
-  readings: { reading: number; created_at: string }[]
+  readings: { reading: number; created_at: string }[],
+  outages?: { start_at: string; end_at: string | null }[]
 ): number | null {
   if (readings.length < 3) return null;
 
@@ -81,10 +127,15 @@ export function calcBurnRate(
 
   const firstDate = new Date(sorted[0].created_at);
   const lastDate = new Date(sorted[sorted.length - 1].created_at);
-  const daySpan =
+  let daySpan =
     (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
 
   if (daySpan < 3) return null;
+
+  // Subtract outage time from active days
+  if (outages && outages.length > 0) {
+    daySpan -= calcOutageDurationDays(outages, firstDate, lastDate);
+  }
 
   let totalConsumption = 0;
   for (let i = 1; i < sorted.length; i++) {

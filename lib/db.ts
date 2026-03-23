@@ -38,6 +38,14 @@ export async function initDb() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS outages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      start_at TEXT NOT NULL,
+      end_at TEXT,
+      note TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL

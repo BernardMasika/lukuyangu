@@ -57,6 +57,9 @@ interface Stats {
   daysRemaining: number | null;
   readingCount: number;
   hasLoggedToday: boolean;
+  outageHoursThisMonth: number;
+  outageCount: number;
+  activeOutage: boolean;
 }
 
 interface Reading {
@@ -82,11 +85,20 @@ interface Change {
   direction: "above" | "below";
 }
 
+export interface Outage {
+  id: number;
+  start_at: string;
+  end_at: string | null;
+  note: string;
+  created_at: string;
+}
+
 interface DataContextValue {
   stats: Stats | null;
   readings: Reading[];
   purchases: Purchase[];
   changes: Change[];
+  outages: Outage[];
   loading: boolean;
   refresh: () => Promise<void>;
 }
@@ -96,6 +108,7 @@ const DataContext = createContext<DataContextValue>({
   readings: [],
   purchases: [],
   changes: [],
+  outages: [],
   loading: true,
   refresh: async () => {},
 });
@@ -114,28 +127,32 @@ export function Providers({ children }: { children: ReactNode }) {
   const [readings, setReadings] = useState<Reading[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [changes, setChanges] = useState<Change[]>([]);
+  const [outages, setOutages] = useState<Outage[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
   const refreshData = useCallback(async () => {
     try {
-      const [statsRes, readingsRes, purchasesRes, changesRes] =
+      const [statsRes, readingsRes, purchasesRes, changesRes, outagesRes] =
         await Promise.all([
           fetch("/api/stats"),
           fetch("/api/readings"),
           fetch("/api/purchases"),
           fetch("/api/changes"),
+          fetch("/api/outages"),
         ]);
-      const [statsData, readingsData, purchasesData, changesData] =
+      const [statsData, readingsData, purchasesData, changesData, outagesData] =
         await Promise.all([
           statsRes.json(),
           readingsRes.json(),
           purchasesRes.json(),
           changesRes.json(),
+          outagesRes.json(),
         ]);
       setStats(statsData);
       setReadings(readingsData);
       setPurchases(purchasesData);
       setChanges(changesData.changes || []);
+      setOutages(outagesData);
     } catch {
       // silent
     } finally {
@@ -254,6 +271,7 @@ export function Providers({ children }: { children: ReactNode }) {
               readings,
               purchases,
               changes,
+              outages,
               loading: dataLoading,
               refresh: refreshData,
             }}

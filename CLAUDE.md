@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project: Luku Yangu
 
-Personal prepaid electricity (LUKU) consumption tracker for a household in Dar es Salaam, Tanzania. Single-user, no auth. User logs meter readings and token purchases; app shows consumption trends, cost tracking, depletion predictions, and anomaly detection. Deployed on Vercel + Turso (free tier).
+Personal prepaid electricity (LUKU) consumption tracker for households in Dar es Salaam, Tanzania. Single-user, no auth. User logs meter readings, token purchases, and power outages; app shows consumption trends, cost tracking, depletion predictions, purchase planning, anomaly detection, and outage impact. Deployed on Vercel + Turso (free tier).
 
 ## Commands
 
@@ -27,11 +27,12 @@ Personal prepaid electricity (LUKU) consumption tracker for a household in Dar e
 
 ## Architecture
 
-- `app/` — App Router. Pages, layouts, and API route handlers
+- `app/` — App Router. Pages (dashboard, history, analytics, plan, settings, log/purchase), layouts, and API route handlers
 - `app/api/` — REST API routes (all export `dynamic = "force-dynamic"`):
   - `readings/` + `[id]/` — CRUD for meter readings
   - `purchases/` + `[id]/` — CRUD for token purchases
-  - `stats/` — Dashboard computed stats (burn rate, predictions)
+  - `outages/` + `[id]/` — CRUD for power outages (TANESCO cuts)
+  - `stats/` — Dashboard computed stats (burn rate, predictions, outage stats)
   - `changes/` — Weekly anomaly detection (>=20% deviation)
   - `summary/` — AI clipboard text generator (sw/en)
   - `settings/` — Key-value settings
@@ -40,9 +41,10 @@ Personal prepaid electricity (LUKU) consumption tracker for a household in Dar e
 - `lib/` — Core utilities:
   - `db.ts` — Turso client singleton (lazy init to avoid build-time errors). Use `db` import for queries, `initDb()` for table creation. The Proxy requires `.bind(getDb())` for methods due to libSQL private fields.
   - `i18n.ts` — Flat `{ key: { sw, en } }` translation map, `tr()` helper with variable interpolation
-  - `utils.ts` — Consumption calc, burn rate, predictions, weekly change detection. All date helpers use `Africa/Dar_es_Salaam` timezone. Includes `isoToDatetimeLocal()` and `datetimeLocalToISO()` for EAT conversion.
+  - `utils.ts` — Consumption calc, burn rate (with outage adjustment), predictions, weekly change detection, Swahili time-of-day periods. All date helpers use `Africa/Dar_es_Salaam` timezone. Includes `isoToDatetimeLocal()`, `datetimeLocalToISO()`, `getTimePeriod()`, and `calcOutageDurationDays()`.
 - `components/` — Shared UI:
-  - `Providers.tsx` — React Context for theme, language, and PWA install prompt state
+  - `Providers.tsx` — React Context for theme, language, PWA install prompt state, and data cache (stats, readings, purchases, changes, outages)
+  - `OutageTracker.tsx` — Live power outage tracking widget (two-state: report outage / end outage)
   - `Nav.tsx` — Bottom tab navigation
   - `StatCard.tsx` — Responsive stat display card
   - `QuickLog.tsx` — Meter reading quick-entry form
@@ -54,9 +56,10 @@ Personal prepaid electricity (LUKU) consumption tracker for a household in Dar e
 
 ## Database Schema (Turso/SQLite)
 
-Three tables, created by `initDb()` in `lib/db.ts`:
+Four tables, created by `initDb()` in `lib/db.ts`:
 - **readings** — `id` INTEGER PK, `reading` REAL, `note` TEXT, `created_at` TEXT (ISO 8601)
 - **purchases** — `id` INTEGER PK, `units` REAL, `amount_tzs` REAL, `note` TEXT, `created_at` TEXT
+- **outages** — `id` INTEGER PK, `start_at` TEXT (ISO 8601), `end_at` TEXT (nullable — NULL = ongoing), `note` TEXT, `created_at` TEXT
 - **settings** — `key` TEXT PK, `value` TEXT (key-value store for currency, meter_no, etc.)
 
 ## Key Domain Logic
@@ -64,10 +67,27 @@ Three tables, created by `initDb()` in `lib/db.ts`:
 - LUKU meters display **remaining units** (counts DOWN). Consumption = previous - current reading.
 - If current > previous, a top-up occurred — match against purchases table.
 - All timestamps in EAT (Africa/Dar_es_Salaam, UTC+3), stored as ISO 8601 TEXT in SQLite.
-- Burn rate needs 3+ readings over 3+ days before showing predictions.
+- Burn rate needs 3+ readings over 3+ days before showing predictions. Outage hours are subtracted from elapsed time for accuracy.
+- Swahili time-of-day periods: Alfajiri (04-05), Asubuhi (06-11), Mchana (12-15), Jioni (16-18), Usiku (19-03). Shown as badges on readings/purchases and as analytics breakdown.
 - Change detection needs 5+ weeks of data before flagging anomalies (>=20% deviation from 4-week rolling baseline).
-- All insights derived from user data only — never assume appliances or lifestyle.
+- Purchase duration tracking: each purchase shows how long it lasted (days until next purchase) or "Day X so far" for the current purchase. Dashboard shows last purchase with estimated total days.
+- Generator users: LUKU meter doesn't count generator power, so units last longer during outages. System accounts for this correctly via outage tracking.
+- All insights derived from user data only, never assume appliances or lifestyle.
 - POST/PUT API routes accept optional `created_at` for backdating entries. Defaults to `new Date().toISOString()`.
+
+## Pages
+
+- **Dashboard** (`/`) — Today's usage, 7-day avg, last purchase (with duration), outage count, burn rate prediction, quick log, outage tracker
+- **History** (`/history`) — Three tabs: Readings, Purchases (with "lasted X days"), Outages. Full CRUD with inline edit. Time period badges on each entry.
+- **Analytics** (`/analytics`) — Historical analysis: daily/weekly/monthly charts, time-of-day breakdown (Today/All Time toggle), cost summary, month comparison, change detection, outage stats, AI summary export
+- **Plan** (`/plan`) — Future-focused: daily usage rate with trend, depletion prediction with calendar date, purchase calculator (budget-to-days or days-to-cost), contextual tips (logging advice, generator awareness)
+- **Settings** (`/settings`) — Meter number, language, theme, export, install app, daily reminder
+
+## i18n Style
+
+- All user-facing strings in `lib/i18n.ts` with `{ sw, en }` pairs
+- Use commas instead of em dashes in sentences
+- Variable interpolation: `{varName}` syntax in `tr()` helper
 
 ## Design
 
@@ -76,7 +96,7 @@ Three tables, created by `initDb()` in `lib/db.ts`:
 - English default language, Swahili toggle (stored in localStorage as `luku-lang`)
 - TANESCO blue (#003399) accent, green for positive trends, red/orange for high consumption
 - Theme and language managed via React Context in `components/Providers.tsx`
-- Bottom tab navigation (Dashboard, History, Analytics, Settings)
+- Bottom tab navigation (Dashboard, History, Analytics, Plan/Mipango, Settings)
 - Impeccable design plugin is available — **always ask user before running any Impeccable command**
 
 ## PWA & Notifications
@@ -86,6 +106,7 @@ Three tables, created by `initDb()` in `lib/db.ts`:
 - Manifest icons must have **separate** `"purpose": "any"` and `"purpose": "maskable"` entries (not combined)
 - Daily reminder notifications scheduled via service worker `postMessage` (`SCHEDULE_REMINDER` / `CANCEL_REMINDER`)
 - Reminder settings stored in `localStorage("luku-reminder")` as JSON `{ enabled, time, title, body }`
+- Active outage state persisted in `localStorage("luku-outage-active")` as JSON `{ id, start_at }`
 - SW re-receives schedule on every app load (handles SW restarts)
 
 ## Tailwind CSS v4 Dark Mode

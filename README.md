@@ -1,20 +1,33 @@
 # Luku Yangu
 
-Personal prepaid electricity (LUKU) consumption tracker for a household in Dar es Salaam, Tanzania. Track meter readings, token purchases, consumption trends, and get depletion predictions — all from your phone.
+Personal prepaid electricity (LUKU) consumption tracker for households in Tanzania. Track meter readings, token purchases, power outages, consumption trends, and plan your electricity budget, all from your phone.
 
 ## Features
 
-- **Dashboard** — today's usage, 7-day average, monthly spending, and burn rate predictions
+- **Dashboard** — today's usage, 7-day average, last purchase with duration tracking, outage count, burn rate predictions
 - **Quick Log** — log meter readings with optional backdated timestamps via preset chips (30min ago, 1h ago, etc.)
-- **Purchase Tracking** — log every LUKU token purchase with units, amount (TZS), and payment method
-- **Analytics** — daily/weekly/monthly consumption charts, cost summary, month-over-month comparison, and anomaly detection (flags weeks with >=20% deviation)
-- **History** — view, edit, and delete all readings and purchases with inline editing
+- **Purchase Tracking** — log every LUKU token purchase, see how long each purchase lasts, cost per kWh
+- **Power Outage Tracking** — log TANESCO power cuts (live or retroactive), automatically adjusts consumption calculations for accuracy
+- **Analytics** — daily/weekly/monthly consumption charts, time-of-day breakdown (Today/All Time toggle), cost summary, month-over-month comparison, anomaly detection (flags weeks with >=20% deviation), outage stats
+- **Plan (Mipango)** — your daily usage rate with trend direction, depletion prediction with calendar date, purchase calculator ("I have TZS X" or "I need X days"), smart contextual tips
+- **History** — view, edit, and delete all readings, purchases (with "lasted X days"), and outages with inline editing
+- **Time-of-Day Labels** — Swahili time periods (Alfajiri, Asubuhi, Mchana, Jioni, Usiku) shown on every entry
 - **Daily Reminders** — push notification reminders to log your meter reading (configurable time)
 - **PWA Installable** — install on your phone for quick access, works offline for cached pages
-- **Bilingual** — English (default) and Swahili, switchable in settings
+- **Bilingual** — English (default) and Swahili (Kiswahili), switchable in settings
 - **Dark/Light Theme** — dark mode default, toggle in settings
 - **CSV Export** — download all data as CSV from settings
 - **AI Summary** — copy a text summary of your data for pasting into Claude, ChatGPT, etc.
+
+## Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Dashboard | `/` | Today's usage, last purchase duration, quick log, outage tracker |
+| History | `/history` | Readings, purchases (with duration), outages — full CRUD |
+| Analytics | `/analytics` | Charts, time-of-day breakdown, cost summary, change detection |
+| Plan | `/plan` | Predictions, purchase calculator, depletion date, tips |
+| Settings | `/settings` | Language, theme, meter number, export, install, reminders |
 
 ## Tech Stack
 
@@ -55,6 +68,10 @@ Personal prepaid electricity (LUKU) consumption tracker for a household in Dar e
    ```
 
 5. Open [http://localhost:3000](http://localhost:3000) and start logging.
+
+## Domain Context
+
+LUKU is Tanzania's prepaid electricity system. Meters display **remaining units** that count down as you consume. Users buy tokens (units) via mobile money or vendors and load them onto the meter. Power outages from TANESCO (the utility company) are common and unpredictable, the app tracks these to keep consumption predictions accurate. Generator power bypasses the LUKU meter entirely, so outages should be logged regardless.
 
 ## Deployment
 

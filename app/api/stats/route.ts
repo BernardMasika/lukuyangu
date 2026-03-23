@@ -46,7 +46,17 @@ export async function GET() {
     created_at: string;
   }[];
 
-  const burnRate = calcBurnRate(last7.length >= 3 ? last7 : readings);
+  // Fetch outages for burn rate adjustment
+  const outagesResult = await db.execute({
+    sql: "SELECT start_at, end_at FROM outages WHERE end_at IS NOT NULL",
+    args: [],
+  });
+  const outages = outagesResult.rows as unknown as {
+    start_at: string;
+    end_at: string | null;
+  }[];
+
+  const burnRate = calcBurnRate(last7.length >= 3 ? last7 : readings, outages);
 
   // 7-day avg
   let avg7: number | null = null;
@@ -86,6 +96,33 @@ export async function GET() {
   // Has logged today?
   const hasLoggedToday = todayReadings.length > 0;
 
+  // Outage stats for current month
+  const monthOutagesResult = await db.execute({
+    sql: "SELECT start_at, end_at FROM outages WHERE strftime('%Y-%m', start_at) = strftime('%Y-%m', 'now')",
+    args: [],
+  });
+  const monthOutages = monthOutagesResult.rows as unknown as {
+    start_at: string;
+    end_at: string | null;
+  }[];
+
+  let outageHoursThisMonth = 0;
+  let outageCount = 0;
+  for (const o of monthOutages) {
+    if (o.end_at) {
+      outageHoursThisMonth +=
+        (new Date(o.end_at).getTime() - new Date(o.start_at).getTime()) /
+        (1000 * 60 * 60);
+      outageCount++;
+    }
+  }
+
+  const activeOutage = monthOutages.some((o) => !o.end_at) ||
+    (await db.execute({
+      sql: "SELECT COUNT(*) as c FROM outages WHERE end_at IS NULL",
+      args: [],
+    }).then((r) => Number((r.rows[0] as unknown as { c: number }).c) > 0));
+
   return NextResponse.json({
     todayUsage,
     avg7: avg7 !== null ? Math.round(avg7 * 10) / 10 : null,
@@ -96,5 +133,8 @@ export async function GET() {
       daysRemaining !== null ? Math.round(daysRemaining * 10) / 10 : null,
     readingCount: readings.length,
     hasLoggedToday,
+    outageHoursThisMonth: Math.round(outageHoursThisMonth * 10) / 10,
+    outageCount,
+    activeOutage,
   });
 }

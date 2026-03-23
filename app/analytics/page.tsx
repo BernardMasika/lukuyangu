@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
-import { formatDateEAT } from "@/lib/utils";
+import { formatDateEAT, getTimePeriod, TZ, type TimePeriod } from "@/lib/utils";
 import ConsumptionChart from "@/components/ConsumptionChart";
 import StatCard from "@/components/StatCard";
 
@@ -11,8 +11,9 @@ type Tab = "daily" | "weekly" | "monthly";
 
 export default function Analytics() {
   const { lang } = useLang();
-  const { readings: rawReadings, changes, purchases } = useData();
+  const { readings: rawReadings, changes, purchases, stats } = useData();
   const [tab, setTab] = useState<Tab>("daily");
+  const [periodView, setPeriodView] = useState<"today" | "all">("today");
   const [copying, setCopying] = useState(false);
 
   // Analytics needs readings in chronological order (oldest first)
@@ -101,6 +102,73 @@ export default function Analytics() {
     return result.slice(-6);
   };
 
+  const PERIOD_ORDER: TimePeriod[] = ["alfajiri", "asubuhi", "mchana", "jioni", "usiku"];
+  const PERIOD_COLORS: Record<TimePeriod, string> = {
+    alfajiri: "bg-indigo-500",
+    asubuhi: "bg-amber-500",
+    mchana: "bg-orange-500",
+    jioni: "bg-purple-500",
+    usiku: "bg-slate-500",
+  };
+
+  const buildPeriodData = () => {
+    const totals: Record<TimePeriod, number> = {
+      alfajiri: 0, asubuhi: 0, mchana: 0, jioni: 0, usiku: 0,
+    };
+    for (let i = 1; i < readings.length; i++) {
+      const prev = readings[i - 1].reading;
+      const curr = readings[i].reading;
+      if (curr < prev) {
+        const period = getTimePeriod(readings[i].created_at);
+        totals[period] += prev - curr;
+      }
+    }
+    return PERIOD_ORDER
+      .map((p) => ({ period: p, value: Math.round(totals[p] * 10) / 10 }))
+      .filter(({ value }) => value > 0);
+  };
+
+  const periodData = buildPeriodData();
+  const maxPeriodValue = Math.max(...periodData.map((d) => d.value), 1);
+
+  // --- Today's breakdown by time period ---
+  const todayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const todayReadings = readings.filter((r) => {
+    const rDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(r.created_at));
+    return rDate === todayStr;
+  });
+
+  const todayPeriods: { period: TimePeriod; value: number }[] = [];
+  if (todayReadings.length >= 2) {
+    const totals: Record<TimePeriod, number> = {
+      alfajiri: 0, asubuhi: 0, mchana: 0, jioni: 0, usiku: 0,
+    };
+    for (let i = 1; i < todayReadings.length; i++) {
+      const prev = todayReadings[i - 1].reading;
+      const curr = todayReadings[i].reading;
+      if (curr < prev) {
+        const period = getTimePeriod(todayReadings[i].created_at);
+        totals[period] += prev - curr;
+      }
+    }
+    for (const p of PERIOD_ORDER) {
+      if (totals[p] > 0)
+        todayPeriods.push({ period: p, value: Math.round(totals[p] * 10) / 10 });
+    }
+  }
+  const maxTodayValue = Math.max(...todayPeriods.map((d) => d.value), 1);
+
   const chartData =
     tab === "daily"
       ? buildDailyData()
@@ -165,7 +233,12 @@ export default function Analytics() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">{tr("analytics.title", lang)}</h1>
+      <div>
+        <h1 className="text-xl font-bold">{tr("analytics.title", lang)}</h1>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          {tr("analytics.description", lang)}
+        </p>
+      </div>
 
       {/* Tabs */}
       <div className="flex rounded-lg border border-zinc-300 overflow-hidden dark:border-zinc-700">
@@ -192,6 +265,127 @@ export default function Analytics() {
       ) : (
         <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500">
           {tr("nudge.noPrediction", lang)}
+        </div>
+      )}
+
+      {/* Time-of-Day Breakdown (Today / All Time toggle) */}
+      <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+            {tr("analytics.byPeriod", lang)}
+          </h3>
+          <div className="flex rounded-lg border border-zinc-300 overflow-hidden dark:border-zinc-700">
+            <button
+              onClick={() => setPeriodView("today")}
+              className={`px-3 py-1 text-xs font-medium transition-colors ${
+                periodView === "today"
+                  ? "bg-[#003399] text-white"
+                  : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+              }`}
+            >
+              {tr("analytics.periodToday", lang)}
+            </button>
+            <button
+              onClick={() => setPeriodView("all")}
+              className={`px-3 py-1 text-xs font-medium transition-colors ${
+                periodView === "all"
+                  ? "bg-[#003399] text-white"
+                  : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+              }`}
+            >
+              {tr("analytics.periodAll", lang)}
+            </button>
+          </div>
+        </div>
+
+        {periodView === "today" ? (
+          todayPeriods.length > 0 ? (
+            <>
+              <div className="space-y-2">
+                {todayPeriods.map(({ period, value }) => (
+                  <div key={period} className="flex items-center gap-3">
+                    <span className="w-20 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                      {tr(`period.${period}`, lang)}
+                    </span>
+                    <div className="relative flex-1 h-5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${PERIOD_COLORS[period]} transition-all`}
+                        style={{ width: `${(value / maxTodayValue) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-16 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                      {value} kWh
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs italic text-zinc-400 dark:text-zinc-500">
+                {tr("analytics.todayExplain", lang)}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs italic text-zinc-400 dark:text-zinc-500">
+              {tr("analytics.todayNeedMore", lang)}
+            </p>
+          )
+        ) : periodData.length > 0 ? (
+          <>
+            <div className="space-y-2">
+              {periodData.map(({ period, value }) => (
+                <div key={period} className="flex items-center gap-3">
+                  <span className="w-20 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    {tr(`period.${period}`, lang)}
+                  </span>
+                  <div className="relative flex-1 h-5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${PERIOD_COLORS[period]} transition-all`}
+                      style={{ width: `${(value / maxPeriodValue) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-16 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    {value} kWh
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
+              {tr("analytics.periodNote", lang)}
+            </p>
+          </>
+        ) : (
+          <p className="text-xs italic text-zinc-400 dark:text-zinc-500">
+            {tr("analytics.todayNeedMore", lang)}
+          </p>
+        )}
+      </div>
+
+      {/* Outage Stats */}
+      {stats && stats.outageCount > 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-3 text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+            {tr("analytics.outages", lang)}
+          </h3>
+          <div className="grid grid-cols-3 gap-2">
+            <StatCard
+              label={tr("outage.totalMonth", lang)}
+              value={stats.outageHoursThisMonth}
+              unit={tr("outage.hours", lang)}
+              accent="red"
+            />
+            <StatCard
+              label={tr("outage.count", lang)}
+              value={stats.outageCount}
+            />
+            <StatCard
+              label={tr("outage.avgDuration", lang)}
+              value={
+                stats.outageCount > 0
+                  ? Math.round((stats.outageHoursThisMonth / stats.outageCount) * 10) / 10
+                  : "—"
+              }
+              unit={tr("outage.hours", lang)}
+            />
+          </div>
         </div>
       )}
 
