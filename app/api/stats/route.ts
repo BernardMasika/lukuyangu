@@ -1,80 +1,103 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
-import { calcBurnRate, calcDaysRemaining } from "@/lib/utils";
+import { startOfDayEAT } from "@/lib/utils";
+import {
+  buildSegments,
+  burnRateFrom,
+  consumptionBetween,
+  purchaseLifetimes,
+  detectMissingPurchases,
+  detectSuspectedOutages,
+  detectLoggingGaps,
+  type ReadingRow,
+  type PurchaseRow,
+  type OutageRow,
+} from "@/lib/ledger";
 
 export const dynamic = "force-dynamic";
 
+const DAY = 86_400_000;
+
 export async function GET() {
-  // Get all readings ordered by time
-  const readingsResult = await db.execute({
-    sql: "SELECT * FROM readings ORDER BY created_at ASC",
-    args: [],
-  });
-  const readings = readingsResult.rows as unknown as {
-    id: number;
-    reading: number;
-    note: string;
-    created_at: string;
-  }[];
+  // One pass over the whole history. Everything below is derived from the same
+  // ledger, so the dashboard, the plan page and analytics cannot disagree.
+  const [readingsResult, purchasesResult, outagesResult] = await Promise.all([
+    db.execute({ sql: "SELECT * FROM readings ORDER BY created_at ASC", args: [] }),
+    db.execute({ sql: "SELECT * FROM purchases ORDER BY created_at ASC", args: [] }),
+    db.execute({ sql: "SELECT start_at, end_at FROM outages", args: [] }),
+  ]);
 
-  // Get today's readings
-  const todayResult = await db.execute({
-    sql: "SELECT * FROM readings WHERE date(created_at) = date('now') ORDER BY created_at ASC",
-    args: [],
-  });
-  const todayReadings = todayResult.rows as unknown as {
-    reading: number;
-    created_at: string;
-  }[];
+  const readings = readingsResult.rows as unknown as ReadingRow[];
+  const purchases = purchasesResult.rows as unknown as PurchaseRow[];
+  const outages = outagesResult.rows as unknown as OutageRow[];
 
-  // Today's usage
-  let todayUsage: number | null = null;
-  if (todayReadings.length >= 2) {
-    const first = todayReadings[0].reading;
-    const last = todayReadings[todayReadings.length - 1].reading;
-    if (last < first) todayUsage = first - last;
-    else todayUsage = 0;
+  const segments = buildSegments(readings, purchases, outages);
+  const now = new Date();
+
+  // --- Balance -------------------------------------------------------------
+  const latest = readings.length > 0 ? readings[readings.length - 1] : null;
+  const latestReading = latest ? latest.reading : null;
+
+  // --- Burn rate -----------------------------------------------------------
+  // Prefer the last 30 days, fall back to everything when logging is sparse.
+  //
+  // The window must match on `from`, not `to`. After a break in logging the
+  // bridging segment ends inside the window but starts months earlier, and
+  // counting it spreads a few kWh over that whole span, which drags the rate
+  // to nearly zero and pushes "runs out" years into the future.
+  const cutoff = now.getTime() - 30 * DAY;
+  const recent = segments.filter((s) => new Date(s.from).getTime() >= cutoff);
+  const burn = burnRateFrom(recent) ?? burnRateFrom(segments);
+  const burnRate = burn ? burn.rate : null;
+
+  // --- Today ---------------------------------------------------------------
+  // Counted in Dar time, and accumulated across a top-up rather than reset.
+  const dayStart = startOfDayEAT(now);
+  const today = consumptionBetween(segments, dayStart, now);
+  const todayUsage = today.hasData ? today.units : null;
+
+  // --- Last 7 days ---------------------------------------------------------
+  const weekStart = new Date(now.getTime() - 7 * DAY);
+  const week = consumptionBetween(segments, weekStart, now);
+  const weekSegments = segments.filter(
+    (s) => new Date(s.from).getTime() >= weekStart.getTime()
+  );
+  const weekActiveDays =
+    weekSegments.reduce((sum, s) => sum + s.activeHours, 0) / 24;
+  // Two hours of logging is not a weekly average. Dividing by a sliver of a day
+  // turns a normal evening into "60 kWh/day", so below a full day it says
+  // nothing rather than something alarming and wrong.
+  const avg7 =
+    week.hasData && weekActiveDays >= 1 ? week.units / weekActiveDays : null;
+
+  // --- Prediction ----------------------------------------------------------
+  let daysRemaining: number | null = null;
+  let runsOutAt: string | null = null;
+  if (burnRate !== null && burnRate > 0 && latestReading !== null && latestReading > 0) {
+    daysRemaining = latestReading / burnRate;
+    runsOutAt = new Date(now.getTime() + daysRemaining * DAY).toISOString();
   }
 
-  // Last 7 days readings for burn rate
-  const last7Result = await db.execute({
-    sql: "SELECT * FROM readings WHERE created_at >= datetime('now', '-7 days') ORDER BY created_at ASC",
-    args: [],
-  });
-  const last7 = last7Result.rows as unknown as {
-    reading: number;
-    created_at: string;
-  }[];
+  // --- Purchase lifetimes (FIFO) -------------------------------------------
+  const openingBalance = readings.length > 0 ? readings[0].reading : 0;
+  const lifetimes = purchaseLifetimes(segments, purchases, openingBalance, now);
 
-  // Fetch outages for burn rate adjustment
-  const outagesResult = await db.execute({
-    sql: "SELECT start_at, end_at FROM outages WHERE end_at IS NOT NULL",
-    args: [],
-  });
-  const outages = outagesResult.rows as unknown as {
-    start_at: string;
-    end_at: string | null;
-  }[];
+  // The purchase actually being burned right now is the earliest one that has
+  // started and not yet run out. If none has started, the newest is queued.
+  const inUse = lifetimes.find((l) => l.started && l.running) ?? null;
+  const queued = inUse
+    ? null
+    : lifetimes.filter((l) => !l.started).slice(-1)[0] ?? null;
+  const lastFinished =
+    [...lifetimes].reverse().find((l) => l.exhaustedAt !== null) ?? null;
 
-  const burnRate = calcBurnRate(last7.length >= 3 ? last7 : readings, outages);
+  const currentPurchase = inUse ?? queued;
+  const estimatedTotalDays =
+    currentPurchase && burnRate !== null && burnRate > 0
+      ? Math.round((currentPurchase.units / burnRate) * 10) / 10
+      : null;
 
-  // 7-day avg
-  let avg7: number | null = null;
-  if (last7.length >= 2) {
-    let total = 0;
-    for (let i = 1; i < last7.length; i++) {
-      if (last7[i].reading < last7[i - 1].reading) {
-        total += last7[i - 1].reading - last7[i].reading;
-      }
-    }
-    const firstDate = new Date(last7[0].created_at);
-    const lastDate = new Date(last7[last7.length - 1].created_at);
-    const days =
-      (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (days > 0) avg7 = total / days;
-  }
-
-  // Monthly spending
+  // --- Spending ------------------------------------------------------------
   const spentResult = await db.execute({
     sql: "SELECT COALESCE(SUM(amount_tzs), 0) as total FROM purchases WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')",
     args: [],
@@ -83,58 +106,66 @@ export async function GET() {
     (spentResult.rows[0] as unknown as { total: number }).total
   );
 
-  // Latest reading
-  const latestReading =
-    readings.length > 0 ? readings[readings.length - 1].reading : null;
-
-  // Prediction
-  let daysRemaining: number | null = null;
-  if (burnRate && latestReading) {
-    daysRemaining = calcDaysRemaining(latestReading, burnRate);
-  }
-
-  // Has logged today?
-  const hasLoggedToday = todayReadings.length > 0;
-
-  // Outage stats for current month
-  const monthOutagesResult = await db.execute({
-    sql: "SELECT start_at, end_at FROM outages WHERE strftime('%Y-%m', start_at) = strftime('%Y-%m', 'now')",
-    args: [],
-  });
-  const monthOutages = monthOutagesResult.rows as unknown as {
-    start_at: string;
-    end_at: string | null;
-  }[];
+  // --- Outages -------------------------------------------------------------
+  const monthKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Dar_es_Salaam",
+    year: "numeric",
+    month: "2-digit",
+  }).format(now);
 
   let outageHoursThisMonth = 0;
   let outageCount = 0;
-  for (const o of monthOutages) {
-    if (o.end_at) {
-      outageHoursThisMonth +=
-        (new Date(o.end_at).getTime() - new Date(o.start_at).getTime()) /
-        (1000 * 60 * 60);
-      outageCount++;
+  let activeOutage = false;
+  for (const o of outages) {
+    if (!o.end_at) {
+      activeOutage = true;
+      continue;
     }
+    if (!o.start_at.startsWith(monthKey.slice(0, 7))) continue;
+    outageHoursThisMonth +=
+      (new Date(o.end_at).getTime() - new Date(o.start_at).getTime()) / 3_600_000;
+    outageCount++;
   }
 
-  const activeOutage = monthOutages.some((o) => !o.end_at) ||
-    (await db.execute({
-      sql: "SELECT COUNT(*) as c FROM outages WHERE end_at IS NULL",
-      args: [],
-    }).then((r) => Number((r.rows[0] as unknown as { c: number }).c) > 0));
+  // --- Things worth asking the user about ----------------------------------
+  const missingPurchases = detectMissingPurchases(segments).slice(-3);
+  const suspectedOutages =
+    burnRate !== null ? detectSuspectedOutages(segments, burnRate).slice(-3) : [];
+  const loggingGaps = detectLoggingGaps(segments, lifetimes).slice(-3);
+
+  const round = (n: number | null) =>
+    n !== null ? Math.round(n * 10) / 10 : null;
 
   return NextResponse.json({
-    todayUsage,
-    avg7: avg7 !== null ? Math.round(avg7 * 10) / 10 : null,
-    spentThisMonth: Math.round(spentThisMonth),
-    burnRate: burnRate !== null ? Math.round(burnRate * 10) / 10 : null,
+    // Balance and usage
     latestReading,
-    daysRemaining:
-      daysRemaining !== null ? Math.round(daysRemaining * 10) / 10 : null,
+    latestReadingAt: latest ? latest.created_at : null,
+    todayUsage: round(todayUsage),
+    todayEstimated: today.estimated,
+    avg7: round(avg7),
+    burnRate: round(burnRate),
+    burnRateDays: burn ? burn.activeDays : null,
+    daysRemaining: round(daysRemaining),
+    runsOutAt,
+    spentThisMonth: Math.round(spentThisMonth),
     readingCount: readings.length,
-    hasLoggedToday,
+    hasLoggedToday:
+      latest !== null && new Date(latest.created_at) >= dayStart,
+
+    // Which purchase is actually being burned, and how it is going
+    currentPurchase: currentPurchase
+      ? { ...currentPurchase, estimatedTotalDays }
+      : null,
+    lastFinishedPurchase: lastFinished,
+
+    // Outages
     outageHoursThisMonth: Math.round(outageHoursThisMonth * 10) / 10,
     outageCount,
     activeOutage,
+
+    // Detections the UI turns into one-tap questions
+    missingPurchases,
+    suspectedOutages,
+    loggingGaps,
   });
 }

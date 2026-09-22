@@ -48,18 +48,59 @@ export function useInstall() {
 }
 
 // --- Data Cache Context ---
+export interface PurchaseLifetime {
+  purchaseId: number;
+  units: number;
+  amount_tzs: number;
+  started: boolean;
+  startedAt: string | null;
+  exhaustedAt: string | null;
+  exhaustedEstimated: boolean;
+  exhaustedAfter: string | null;
+  exhaustedBefore: string | null;
+  days: number;
+  running: boolean;
+  idleDaysBeforeStart: number;
+  unitsRemaining: number;
+  tzsPerUnit: number;
+  vendor: string;
+  estimatedTotalDays?: number | null;
+}
+
 interface Stats {
+  latestReading: number | null;
+  latestReadingAt: string | null;
   todayUsage: number | null;
+  todayEstimated: boolean;
   avg7: number | null;
   spentThisMonth: number;
   burnRate: number | null;
-  latestReading: number | null;
+  burnRateDays: number | null;
   daysRemaining: number | null;
+  runsOutAt: string | null;
   readingCount: number;
   hasLoggedToday: boolean;
+  currentPurchase: PurchaseLifetime | null;
+  lastFinishedPurchase: PurchaseLifetime | null;
   outageHoursThisMonth: number;
   outageCount: number;
   activeOutage: boolean;
+  missingPurchases: { from: string; to: string; units: number }[];
+  suspectedOutages: {
+    from: string;
+    to: string;
+    hours: number;
+    rate: number;
+    baseline: number;
+  }[];
+  loggingGaps: {
+    from: string;
+    to: string;
+    days: number;
+    consumption: number;
+    purchaseCount: number;
+    depletionsInside: number;
+  }[];
 }
 
 interface Reading {
@@ -69,11 +110,12 @@ interface Reading {
   created_at: string;
 }
 
-interface Purchase {
+export interface Purchase {
   id: number;
   units: number;
   amount_tzs: number;
   note: string;
+  vendor: string;
   created_at: string;
 }
 

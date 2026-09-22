@@ -6,14 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test lib/*.test.mts",
+    "inspect": "node --env-file=.env.local scripts/inspect-ledger.mts",
+    "archive": "node --env-file=.env.local scripts/archive-and-reset.mts",
+    "reset": "node --env-file=.env.local scripts/archive-and-reset.mts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@libsql/client": "^0.17.2",
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.8.0"
+    "recharts": "^3.8.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

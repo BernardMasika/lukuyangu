@@ -14,6 +14,10 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
 - `npm run build` — production build
 - `npm run start` — serve production build
 - `npm run lint` — run ESLint (flat config, ESLint 9)
+- `npm test` — run ledger unit tests (`node --test`, no framework, no deps)
+- `npm run inspect` — print the live ledger segment by segment (the "show your working" tool)
+- `npm run archive` — dump every table to `backups/<timestamp>/` as CSV + JSON
+- `npm run reset -- --yes` — archive, then clear readings/purchases/outages for a new house
 - First-time DB setup: hit `GET /api/setup` after configuring `.env.local`
 
 ## Tech Stack
@@ -32,17 +36,28 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
   - `readings/` + `[id]/` — CRUD for meter readings
   - `purchases/` + `[id]/` — CRUD for token purchases
   - `outages/` + `[id]/` — CRUD for power outages (TANESCO cuts)
-  - `stats/` — Dashboard computed stats (burn rate, predictions, outage stats)
+  - `stats/` — All computed stats, derived from `lib/ledger.ts` in one pass
+  - `insight/` — Claude-backed analysis (GET reads cache, POST regenerates)
   - `changes/` — Weekly anomaly detection (>=20% deviation)
   - `summary/` — AI clipboard text generator (sw/en)
   - `settings/` — Key-value settings
   - `export/` — CSV download
   - `setup/` — One-time DB table creation
 - `lib/` — Core utilities:
+  - `ledger.ts` — **The spine.** Merges readings + purchases + outages into one
+    chronological list of `Segment`s, so consumption is correct across a top-up.
+    FIFO unit accounting gives each purchase a real lifetime and infers when it
+    ran out. Also holds the detections (missing purchase, suspected outage,
+    logging gap) and the mistype guard's expected-reading band. Deliberately has
+    **no imports** so `node --test` can type-strip it directly.
+    Any new consumption question belongs here, not in a page.
   - `db.ts` — Turso client singleton (lazy init to avoid build-time errors). Use `db` import for queries, `initDb()` for table creation. The Proxy requires `.bind(getDb())` for methods due to libSQL private fields.
   - `i18n.ts` — Flat `{ key: { sw, en } }` translation map, `tr()` helper with variable interpolation
   - `utils.ts` — Consumption calc, burn rate (with outage adjustment), predictions, weekly change detection, Swahili time-of-day periods. All date helpers use `Africa/Dar_es_Salaam` timezone. Includes `isoToDatetimeLocal()`, `datetimeLocalToISO()`, `getTimePeriod()`, and `calcOutageDurationDays()`.
 - `components/` — Shared UI:
+  - `Detections.tsx` — One-tap questions raised by the ledger, dismissals in localStorage
+  - `AiInsight.tsx` — Claude analysis card (Analytics page), inert without an API key
+  - `VendorRates.tsx` — TZS per unit by vendor, names the cheapest channel
   - `Providers.tsx` — React Context for theme, language, PWA install prompt state, and data cache (stats, readings, purchases, changes, outages)
   - `OutageTracker.tsx` — Live power outage tracking widget (two-state: report outage / end outage)
   - `Nav.tsx` — Bottom tab navigation
@@ -58,14 +73,25 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
 
 Four tables, created by `initDb()` in `lib/db.ts`:
 - **readings** — `id` INTEGER PK, `reading` REAL, `note` TEXT, `created_at` TEXT (ISO 8601)
-- **purchases** — `id` INTEGER PK, `units` REAL, `amount_tzs` REAL, `note` TEXT, `created_at` TEXT
+- **purchases** — `id` INTEGER PK, `units` REAL, `amount_tzs` REAL, `note` TEXT, `vendor` TEXT, `created_at` TEXT
 - **outages** — `id` INTEGER PK, `start_at` TEXT (ISO 8601), `end_at` TEXT (nullable — NULL = ongoing), `note` TEXT, `created_at` TEXT
 - **settings** — `key` TEXT PK, `value` TEXT (key-value store for currency, meter_no, etc.)
 
 ## Key Domain Logic
 
-- LUKU meters display **remaining units** (counts DOWN). Consumption = previous - current reading.
-- If current > previous, a top-up occurred — match against purchases table.
+- LUKU meters display **remaining units** (counts DOWN). Consumption for a pair of
+  readings is `previous + unitsPurchasedBetween - current`, never `previous - current`.
+  Anything that drops the purchase term under-reports every period containing a top-up.
+  Use `buildSegments()`; do not hand-roll this in a page.
+- Purchase lifetimes are **FIFO**: units already on the meter burn before newly bought
+  ones. A purchase made while units remain is `started: false` and has no lifetime yet.
+  This is why "days since purchase" is the wrong number to show.
+- Depletion times are interpolated on the cumulative-consumption curve, so they carry
+  `exhaustedEstimated` and a bracketing window. Show the uncertainty, do not hide it.
+- Burn rate is per **active day** (outage hours removed) and ignores segments longer
+  than 14 days, since a bridge across a logging break is not a daily rate.
+- Detections are **questions, never assertions**: a meter that barely moved looks
+  identical whether the power was cut or nobody was home.
 - All timestamps in EAT (Africa/Dar_es_Salaam, UTC+3), stored as ISO 8601 TEXT in SQLite.
 - Burn rate needs 3+ readings over 3+ days before showing predictions. Outage hours are subtracted from elapsed time for accuracy.
 - Swahili time-of-day periods: Alfajiri (04-05), Asubuhi (06-11), Mchana (12-15), Jioni (16-18), Usiku (19-03). Shown as badges on readings/purchases and as analytics breakdown.
@@ -122,6 +148,18 @@ Without it, `dark:` variants use `prefers-color-scheme` media query instead of t
 Required in `.env.local` (not committed):
 - `TURSO_DATABASE_URL` — Turso database URL
 - `TURSO_AUTH_TOKEN` — Turso auth token
+
+Optional:
+- `ANTHROPIC_API_KEY` — enables `/api/insight`. Without it the AI analysis card
+  says so and nothing else changes. Model is `claude-opus-5`; results are cached
+  in `settings.insight_cache` and only regenerate when the data fingerprint
+  changes, so page loads cost nothing.
+
+## Migrations
+
+SQLite has no `ADD COLUMN IF NOT EXISTS`, so `migrate()` in `lib/db.ts` holds a list
+of columns added after first release and swallows duplicate-column errors. Add new
+columns there and hit `GET /api/setup` to apply them to a deployed database.
 
 ## Critical: Next.js 16 Breaking Changes
 

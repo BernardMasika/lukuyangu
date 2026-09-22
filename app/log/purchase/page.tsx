@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLang, useData } from "@/components/Providers";
-import { tr } from "@/lib/i18n";
+import { tr, VENDORS } from "@/lib/i18n";
 import TimePicker from "@/components/TimePicker";
 
 export default function LogPurchase() {
@@ -13,8 +13,15 @@ export default function LogPurchase() {
   const [units, setUnits] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [vendor, setVendor] = useState("");
   const [when, setWhen] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Live feedback on the rate, so a bad channel is obvious before saving.
+  const tzsPerUnit =
+    units && amount && Number(units) > 0
+      ? Math.round((Number(amount) / Number(units)) * 10) / 10
+      : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +36,7 @@ export default function LogPurchase() {
           units: Number(units),
           amount_tzs: Number(amount),
           note,
+          vendor,
           ...(when ? { created_at: when } : {}),
         }),
       });
@@ -75,6 +83,37 @@ export default function LogPurchase() {
           />
         </div>
 
+        {tzsPerUnit !== null && (
+          <p className="-mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            TZS {tzsPerUnit.toLocaleString()} {tr("analytics.perUnit", lang)}
+          </p>
+        )}
+
+        <div>
+          <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">
+            {tr("purchase.vendor", lang)}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {VENDORS.map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVendor(vendor === v ? "" : v)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  vendor === v
+                    ? "border-[#003399] bg-[#003399] text-white"
+                    : "border-zinc-300 bg-zinc-50 text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600"
+                }`}
+              >
+                {tr(`vendor.${v}`, lang)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+            {tr("purchase.vendorHelp", lang)}
+          </p>
+        </div>
+
         <div>
           <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">
             {tr("purchase.note", lang)}
@@ -83,16 +122,20 @@ export default function LogPurchase() {
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="M-Pesa, CRDB..."
             className={inputClass}
           />
         </div>
 
-        <TimePicker
-          value={when}
-          onChange={setWhen}
-          label={tr("purchase.when", lang)}
-        />
+        <div>
+          <TimePicker
+            value={when}
+            onChange={setWhen}
+            label={tr("purchase.whenActivated", lang)}
+          />
+          <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+            {tr("purchase.whenActivatedHelp", lang)}
+          </p>
+        </div>
 
         <button
           type="submit"

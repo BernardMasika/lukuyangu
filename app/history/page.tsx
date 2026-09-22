@@ -2,14 +2,23 @@
 
 import { useState } from "react";
 import { useLang, useData } from "@/components/Providers";
-import { tr } from "@/lib/i18n";
+import { tr, VENDORS } from "@/lib/i18n";
 import { formatDateTimeEAT, getTimePeriod } from "@/lib/utils";
+import { buildSegments, purchaseLifetimes } from "@/lib/ledger";
 import ConfirmModal from "@/components/ConfirmModal";
 import TimePicker from "@/components/TimePicker";
 
 export default function History() {
   const { lang } = useLang();
-  const { readings, purchases, outages, stats, refresh } = useData();
+  const { readings, purchases, outages, refresh } = useData();
+
+  // Readings arrive newest first; the ledger wants them chronological.
+  const chronological = [...readings].reverse();
+  const lifetimes = purchaseLifetimes(
+    buildSegments(chronological, purchases, outages),
+    purchases,
+    chronological[0]?.reading ?? 0
+  );
   const [tab, setTab] = useState<"readings" | "purchases" | "outages">("readings");
   const [deleteTarget, setDeleteTarget] = useState<{
     type: "reading" | "purchase" | "outage";
@@ -41,6 +50,7 @@ export default function History() {
         units: String(p.units),
         amount_tzs: String(p.amount_tzs),
         note: p.note,
+        vendor: p.vendor ?? "",
         created_at: p.created_at,
       });
     }
@@ -59,6 +69,9 @@ export default function History() {
             units: Number(editValues.units),
             amount_tzs: Number(editValues.amount_tzs),
             note: editValues.note,
+            // Carried through so editing a purchase does not silently drop
+            // where it was bought.
+            vendor: editValues.vendor ?? "",
             created_at: editValues.created_at,
           };
     await fetch(endpoint, {
@@ -284,6 +297,27 @@ export default function History() {
                     className={inputClass}
                     placeholder="Amount TZS"
                   />
+                  <div className="flex flex-wrap gap-1.5">
+                    {VENDORS.map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() =>
+                          setEditValues({
+                            ...editValues,
+                            vendor: editValues.vendor === v ? "" : v,
+                          })
+                        }
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          editValues.vendor === v
+                            ? "border-[#003399] bg-[#003399] text-white"
+                            : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+                        }`}
+                      >
+                        {tr(`vendor.${v}`, lang)}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="text"
                     value={editValues.note}
@@ -327,35 +361,44 @@ export default function History() {
                         {Math.round(p.amount_tzs / p.units)}/kWh
                       </span>
                     </p>
-                    {/* How long this purchase lasted */}
+                    {/* How long this purchase actually lasted, FIFO. The old
+                        version measured purchase-to-purchase, which counted
+                        the days a top-up sat unused behind older units. */}
                     {(() => {
-                      const idx = purchases.indexOf(p);
-                      const isLatest = idx === 0;
-                      if (isLatest) {
-                        const daysSince = Math.floor(
-                          (Date.now() - new Date(p.created_at).getTime()) / 86400000
-                        );
-                        const estTotal =
-                          stats?.burnRate && stats.burnRate > 0
-                            ? Math.round(p.units / stats.burnRate)
-                            : null;
+                      const life = lifetimes.find((l) => l.purchaseId === p.id);
+                      if (!life) return null;
+
+                      if (!life.started) {
                         return (
-                          <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
-                            {tr("history.ongoingPurchase", lang, { days: daysSince })}
-                            {estTotal !== null && ` (~${estTotal} ${tr("plan.daysLabel", lang)} ${lang === "sw" ? "jumla" : "total"})`}
+                          <p className="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
+                            {tr("history.notStarted", lang)}
                           </p>
                         );
                       }
-                      // Completed purchase — days until next purchase
-                      const nextPurchase = purchases[idx - 1];
-                      const days = Math.round(
-                        (new Date(nextPurchase.created_at).getTime() -
-                          new Date(p.created_at).getTime()) /
-                          86400000
-                      );
+                      if (life.running) {
+                        return (
+                          <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                            {tr("history.stillRunning", lang, {
+                              days: Math.max(1, Math.round(life.days)),
+                            })}
+                          </p>
+                        );
+                      }
                       return (
                         <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
-                          {tr("history.lasted", lang, { days })}
+                          {tr("history.lastedDays", lang, { days: life.days })}
+                          {life.exhaustedAt && (
+                            <span className="text-zinc-400 dark:text-zinc-500">
+                              {" · "}
+                              {tr(
+                                life.exhaustedEstimated
+                                  ? "detect.ranOutAbout"
+                                  : "detect.ranOutAt",
+                                lang,
+                                { when: formatDateTimeEAT(life.exhaustedAt) }
+                              )}
+                            </span>
+                          )}
                         </p>
                       );
                     })()}
@@ -364,6 +407,7 @@ export default function History() {
                       <span className="ml-1 text-blue-500 dark:text-blue-400">
                         · {tr(`period.${getTimePeriod(p.created_at)}`, lang)}
                       </span>
+                      {p.vendor && ` · ${tr(`vendor.${p.vendor}`, lang)}`}
                       {p.note && ` · ${p.note}`}
                     </p>
                   </div>

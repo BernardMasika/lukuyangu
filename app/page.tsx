@@ -8,10 +8,16 @@ import StatCard from "@/components/StatCard";
 import QuickLog from "@/components/QuickLog";
 import Nudge from "@/components/Nudge";
 import OutageTracker from "@/components/OutageTracker";
+import Detections from "@/components/Detections";
 
+/**
+ * One question first: how much is on the meter and when does it run out.
+ * Everything below that answers a follow-up. "Days remaining" is stated once,
+ * in the hero, and never repeated further down the page.
+ */
 export default function Dashboard() {
   const { lang } = useLang();
-  const { stats, purchases, loading } = useData();
+  const { stats, loading } = useData();
 
   if (loading) {
     return (
@@ -21,44 +27,76 @@ export default function Dashboard() {
     );
   }
 
+  const current = stats?.currentPurchase ?? null;
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">{tr("dashboard.title", lang)}</h1>
 
-      {/* Nudges */}
+      {/* Getting started */}
       {stats && stats.readingCount === 0 && (
         <Nudge text={tr("nudge.firstReading", lang)} variant="info" />
       )}
-      {stats && stats.readingCount === 1 && stats.latestReading !== null && (
+      {stats && stats.readingCount === 1 && (
         <Nudge
-          text={tr("nudge.oneReading", lang, {
-            units: stats.latestReading,
-          })}
+          text={tr("nudge.oneReading", lang, { units: stats.latestReading ?? 0 })}
           variant="info"
         />
       )}
-      {stats && !stats.hasLoggedToday && stats.readingCount > 0 && (
-        <Nudge text={tr("nudge.logReminder", lang)} variant="warning" />
+
+      {/* The answer */}
+      {stats && stats.latestReading !== null && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            {tr("dashboard.balance", lang)}
+          </p>
+          <p className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-4xl font-bold tabular-nums text-zinc-900 dark:text-white">
+              {stats.latestReading}
+            </span>
+            <span className="text-sm text-zinc-400 dark:text-zinc-500">kWh</span>
+          </p>
+
+          {stats.daysRemaining !== null && stats.runsOutAt !== null ? (
+            <p className="mt-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              {tr("dashboard.runsOutIn", lang, {
+                days: Math.round(stats.daysRemaining),
+              })}
+              <span className="font-normal text-zinc-400 dark:text-zinc-500">
+                {" , "}
+                {tr("dashboard.runsOutOn", lang, {
+                  date: formatDateEAT(stats.runsOutAt),
+                })}
+              </span>
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-zinc-400 dark:text-zinc-500">
+              {tr("dashboard.runsOutUnknown", lang)}
+            </p>
+          )}
+        </div>
       )}
+
+      {/* Only alerts that need an action today */}
       {stats &&
         stats.latestReading !== null &&
         stats.latestReading <= 15 &&
-        stats.burnRate !== null &&
-        stats.daysRemaining !== null && (
-          <Nudge
-            text={tr("nudge.lowBalance", lang, {
-              units: stats.latestReading,
-              days: Math.round(stats.daysRemaining),
-            })}
-            variant="warning"
-          />
+        stats.readingCount > 1 && (
+          <Nudge text={tr("dashboard.lowBalanceShort", lang)} variant="warning" />
         )}
+      {stats && !stats.hasLoggedToday && stats.readingCount > 0 && (
+        <Nudge text={tr("dashboard.logToday", lang)} variant="info" />
+      )}
 
-      {/* Stat Cards */}
+      {/* Usage */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           label={tr("dashboard.today", lang)}
-          value={stats?.todayUsage !== null ? stats?.todayUsage ?? "—" : "—"}
+          value={
+            stats?.todayUsage !== null && stats?.todayUsage !== undefined
+              ? `${stats.todayEstimated ? "~" : ""}${stats.todayUsage}`
+              : "—"
+          }
           unit="kWh"
           accent="blue"
         />
@@ -69,83 +107,71 @@ export default function Dashboard() {
           accent="green"
         />
       </div>
-      {/* Last Purchase */}
-      {(() => {
-        const lastPurchase = purchases.length > 0 ? purchases[0] : null;
-        if (!lastPurchase) return null;
 
-        const purchaseDate = new Date(lastPurchase.created_at);
-        const daysSincePurchase = Math.floor(
-          (Date.now() - purchaseDate.getTime()) / 86400000
-        );
-
-        // Use burn rate to estimate total days this purchase covers
-        const estimatedTotalDays =
-          stats?.burnRate && stats.burnRate > 0
-            ? Math.round(lastPurchase.units / stats.burnRate)
-            : null;
-
-        return (
-          <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              {tr("dashboard.lastPurchase", lang)}
-            </p>
-            <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-white">
-              {lastPurchase.units} kWh · TZS {lastPurchase.amount_tzs.toLocaleString()}
-            </p>
-            <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-              {formatDateEAT(lastPurchase.created_at)}
-            </p>
-            <p className="mt-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-              {tr("dashboard.lasting", lang, { days: daysSincePurchase })}
-              {estimatedTotalDays !== null && (
-                <span>
-                  {" · ~"}{estimatedTotalDays} {tr("plan.daysLabel", lang)}{" "}
-                  {lang === "sw" ? "jumla" : "total"}
-                </span>
-              )}
-            </p>
-          </div>
-        );
-      })()}
-
-      {/* Outage count */}
-      {stats && stats.outageCount > 0 && (
-        <div className="rounded-xl border border-zinc-200 bg-white p-3 sm:p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-[10px] sm:text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            {tr("outage.count", lang)}
+      {/* Which purchase is actually being burned right now */}
+      {current && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            {tr("dashboard.inUse", lang)}
           </p>
-          <p className="mt-1 text-orange-600 dark:text-orange-400">
-            <span className="text-lg font-bold">{stats.outageCount}</span>
-            <span className="ml-1 text-xs font-normal">
-              {lang === "sw" ? "mwezi huu" : "this month"}
-            </span>
+          <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-white">
+            {current.units} kWh · TZS {current.amount_tzs.toLocaleString()}
+            {current.vendor && (
+              <span className="ml-1.5 font-normal text-zinc-400 dark:text-zinc-500">
+                {tr(`vendor.${current.vendor}`, lang)}
+              </span>
+            )}
           </p>
+
+          {current.started ? (
+            <>
+              <p className="mt-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                {/* "Day 164 of about 2" helps nobody. Once the purchase has
+                    outlived its estimate the estimate is the wrong number to
+                    show, so drop it and just count the days. */}
+                {current.estimatedTotalDays &&
+                current.days <= current.estimatedTotalDays * 1.5
+                  ? tr("dashboard.dayOf", lang, {
+                      day: Math.max(1, Math.round(current.days)),
+                      total: Math.round(current.estimatedTotalDays),
+                    })
+                  : tr("dashboard.lasting", lang, {
+                      days: Math.max(1, Math.round(current.days)),
+                    })}
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                {tr("dashboard.unitsLeftOfPurchase", lang, {
+                  units: current.unitsRemaining,
+                })}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">
+                {tr("dashboard.queued", lang)}
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                {tr("dashboard.queuedExplain", lang, {
+                  units:
+                    stats?.latestReading !== null &&
+                    stats?.latestReading !== undefined
+                      ? Math.round(
+                          (stats.latestReading - current.unitsRemaining) * 10
+                        ) / 10
+                      : 0,
+                })}
+              </p>
+            </>
+          )}
         </div>
       )}
 
-      {/* Prediction */}
-      {stats && stats.burnRate !== null && stats.daysRemaining !== null && stats.latestReading !== null && (
-        <Nudge
-          text={tr("nudge.burnRate", lang, {
-            rate: stats.burnRate,
-            units: stats.latestReading,
-            days: Math.round(stats.daysRemaining),
-          })}
-          variant="success"
-        />
-      )}
-      {stats && stats.readingCount >= 1 && stats.burnRate === null && (
-        <Nudge text={tr("nudge.noPrediction", lang)} variant="info" />
-      )}
+      {/* Questions the data raised */}
+      <Detections />
 
-      {/* Outage Tracker */}
       <OutageTracker />
-
-      {/* Quick Log */}
       <QuickLog />
 
-      {/* Log Purchase Button */}
       <Link
         href="/log/purchase"
         className="flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"

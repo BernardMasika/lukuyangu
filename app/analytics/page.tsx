@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
-import { formatDateEAT, getTimePeriod, TZ, type TimePeriod } from "@/lib/utils";
+import { formatDateEAT, getTimePeriod, getWeekStart, TZ, type TimePeriod } from "@/lib/utils";
+import { buildSegments, dailySeries } from "@/lib/ledger";
 import ConsumptionChart from "@/components/ConsumptionChart";
 import StatCard from "@/components/StatCard";
+import VendorRates from "@/components/VendorRates";
+import AiInsight from "@/components/AiInsight";
 
 type Tab = "daily" | "weekly" | "monthly";
 
 export default function Analytics() {
   const { lang } = useLang();
-  const { readings: rawReadings, changes, purchases, stats } = useData();
+  const { readings: rawReadings, changes, purchases, outages, stats } = useData();
   const [tab, setTab] = useState<Tab>("daily");
   const [periodView, setPeriodView] = useState<"today" | "all">("today");
   const [copying, setCopying] = useState(false);
@@ -19,88 +22,40 @@ export default function Analytics() {
   // Analytics needs readings in chronological order (oldest first)
   const readings = [...rawReadings].reverse();
 
-  const buildDailyData = () => {
-    const days = new Map<string, { first: number; last: number }>();
-    for (const r of readings) {
-      const day = r.created_at.slice(0, 10);
-      if (!days.has(day)) {
-        days.set(day, { first: r.reading, last: r.reading });
-      } else {
-        days.get(day)!.last = r.reading;
-      }
-    }
+  // Same ledger the dashboard reads, so the charts cannot disagree with it.
+  // The old builders compared raw readings, which meant every week containing a
+  // top-up under-reported its consumption.
+  const segments = buildSegments(readings, purchases, outages);
 
-    const result: { label: string; value: number }[] = [];
-    for (const [day, { first, last }] of days) {
-      const consumption = first > last ? first - last : 0;
-      result.push({
-        label: day.slice(5),
-        value: Math.round(consumption * 10) / 10,
-      });
+  const buildDailyData = () =>
+    dailySeries(segments, 30)
+      .filter((d) => d.units !== null)
+      .map((d) => ({ label: d.date.slice(5), value: d.units as number }));
+
+  /** Roll segments up into buckets, crediting each to the bucket it ends in. */
+  const bucketed = (key: (d: Date) => string, keep: number) => {
+    const buckets = new Map<string, number>();
+    for (const seg of segments) {
+      const k = key(new Date(seg.to));
+      buckets.set(k, (buckets.get(k) ?? 0) + seg.consumption);
     }
-    return result.slice(-30);
+    return [...buckets.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, value]) => ({
+        label,
+        value: Math.round(value * 10) / 10,
+      }))
+      .slice(-keep);
   };
 
-  const buildWeeklyData = () => {
-    const weeks = new Map<
-      string,
-      { readings: { reading: number; created_at: string }[] }
-    >();
-    for (const r of readings) {
-      const d = new Date(r.created_at);
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      const weekStart = new Date(d);
-      weekStart.setDate(diff);
-      const key = weekStart.toISOString().slice(0, 10);
-      if (!weeks.has(key)) weeks.set(key, { readings: [] });
-      weeks.get(key)!.readings.push(r);
-    }
+  const buildWeeklyData = () =>
+    bucketed((d) => getWeekStart(d).toISOString().slice(0, 10), 8).map((b) => ({
+      ...b,
+      label: b.label.slice(5),
+    }));
 
-    const result: { label: string; value: number }[] = [];
-    for (const [weekKey, week] of weeks) {
-      if (week.readings.length < 2) continue;
-      let consumption = 0;
-      for (let i = 1; i < week.readings.length; i++) {
-        const prev = week.readings[i - 1].reading;
-        const curr = week.readings[i].reading;
-        if (curr < prev) consumption += prev - curr;
-      }
-      result.push({
-        label: weekKey.slice(5),
-        value: Math.round(consumption * 10) / 10,
-      });
-    }
-    return result.slice(-8);
-  };
-
-  const buildMonthlyData = () => {
-    const months = new Map<
-      string,
-      { readings: { reading: number; created_at: string }[] }
-    >();
-    for (const r of readings) {
-      const key = r.created_at.slice(0, 7);
-      if (!months.has(key)) months.set(key, { readings: [] });
-      months.get(key)!.readings.push(r);
-    }
-
-    const result: { label: string; value: number }[] = [];
-    for (const [monthKey, month] of months) {
-      if (month.readings.length < 2) continue;
-      let consumption = 0;
-      for (let i = 1; i < month.readings.length; i++) {
-        const prev = month.readings[i - 1].reading;
-        const curr = month.readings[i].reading;
-        if (curr < prev) consumption += prev - curr;
-      }
-      result.push({
-        label: monthKey,
-        value: Math.round(consumption * 10) / 10,
-      });
-    }
-    return result.slice(-6);
-  };
+  const buildMonthlyData = () =>
+    bucketed((d) => d.toISOString().slice(0, 7), 6);
 
   const PERIOD_ORDER: TimePeriod[] = ["alfajiri", "asubuhi", "mchana", "jioni", "usiku"];
   const PERIOD_COLORS: Record<TimePeriod, string> = {
@@ -115,13 +70,10 @@ export default function Analytics() {
     const totals: Record<TimePeriod, number> = {
       alfajiri: 0, asubuhi: 0, mchana: 0, jioni: 0, usiku: 0,
     };
-    for (let i = 1; i < readings.length; i++) {
-      const prev = readings[i - 1].reading;
-      const curr = readings[i].reading;
-      if (curr < prev) {
-        const period = getTimePeriod(readings[i].created_at);
-        totals[period] += prev - curr;
-      }
+    // Credited to the period the stretch started in, and taken from the ledger
+    // so a top-up inside the stretch no longer erases it.
+    for (const seg of segments) {
+      totals[getTimePeriod(seg.from)] += seg.consumption;
     }
     return PERIOD_ORDER
       .map((p) => ({ period: p, value: Math.round(totals[p] * 10) / 10 }))
@@ -408,6 +360,9 @@ export default function Analytics() {
         />
       </div>
 
+      {/* What each channel actually charges per unit */}
+      <VendorRates />
+
       {/* Month comparison */}
       {monthDelta !== null && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -456,6 +411,9 @@ export default function Analytics() {
           </p>
         )}
       </div>
+
+      {/* Claude reads the ledger and says what it makes of it */}
+      <AiInsight />
 
       {/* Copy for AI */}
       <button

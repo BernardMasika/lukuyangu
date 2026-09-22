@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { units, amount_tzs, note } = body;
+  const { units, amount_tzs, note, vendor } = body;
 
   if (!units || !amount_tzs) {
     return NextResponse.json(
@@ -44,12 +44,24 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await db.execute({
-    sql: "INSERT INTO purchases (units, amount_tzs, note, created_at) VALUES (?, ?, ?, ?)",
-    args: [units, amount_tzs, note || "", body.created_at || new Date().toISOString()],
+    sql: "INSERT INTO purchases (units, amount_tzs, note, vendor, created_at) VALUES (?, ?, ?, ?, ?)",
+    args: [
+      units,
+      amount_tzs,
+      note || "",
+      vendor || "",
+      body.created_at || new Date().toISOString(),
+    ],
   });
 
   return NextResponse.json(
-    { id: Number(result.lastInsertRowid), units, amount_tzs, note: note || "" },
+    {
+      id: Number(result.lastInsertRowid),
+      units,
+      amount_tzs,
+      note: note || "",
+      vendor: vendor || "",
+    },
     { status: 201 }
   );
 }

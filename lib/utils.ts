@@ -1,3 +1,5 @@
+import { calcOutageDurationDays } from "./ledger";
+
 export const TZ = "Africa/Dar_es_Salaam";
 
 export type TimePeriod = "alfajiri" | "asubuhi" | "mchana" | "jioni" | "usiku";
@@ -47,6 +49,20 @@ export function nowEAT(): string {
   return new Date().toISOString();
 }
 
+/** Midnight in Dar es Salaam for the EAT day that `at` falls in.
+ *  SQL `date('now')` is UTC, which flips the day three hours early here, so
+ *  every "today" window is built in JS from this instead. */
+export function startOfDayEAT(at: Date = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return new Date(`${get("year")}-${get("month")}-${get("day")}T00:00:00+03:00`);
+}
+
 /** Convert ISO string to datetime-local input value in EAT (YYYY-MM-DDTHH:mm) */
 export function isoToDatetimeLocal(iso: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -68,27 +84,9 @@ export function datetimeLocalToISO(local: string): string {
   return new Date(local + ":00+03:00").toISOString();
 }
 
-/** Sum outage durations (in days) that overlap a time window.
- *  Clamps each outage to the window boundaries. Skips ongoing outages. */
-export function calcOutageDurationDays(
-  outages: { start_at: string; end_at: string | null }[],
-  windowStart: Date,
-  windowEnd: Date
-): number {
-  let totalMs = 0;
-  for (const o of outages) {
-    if (!o.end_at) continue; // skip ongoing
-    const oStart = new Date(o.start_at);
-    const oEnd = new Date(o.end_at);
-    // clamp to window
-    const clampedStart = oStart < windowStart ? windowStart : oStart;
-    const clampedEnd = oEnd > windowEnd ? windowEnd : oEnd;
-    if (clampedStart < clampedEnd) {
-      totalMs += clampedEnd.getTime() - clampedStart.getTime();
-    }
-  }
-  return totalMs / (1000 * 60 * 60 * 24);
-}
+// Moved to lib/ledger.ts so the ledger has no imports and can be unit tested
+// with `node --test` directly. Re-exported here for existing callers.
+export { calcOutageDurationDays } from "./ledger";
 
 /** Calculate consumption between two consecutive readings.
  *  LUKU meters count DOWN. If current < previous => consumption.

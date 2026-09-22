@@ -1,5 +1,19 @@
 export type Lang = "sw" | "en";
 
+/** Where units get bought, cheapest channels first. Stored in
+ *  `purchases.vendor`; labels live under the `vendor.*` keys below. */
+export const VENDORS = [
+  "mpesa",
+  "mixx",
+  "airtel",
+  "halopesa",
+  "bank",
+  "agent",
+  "other",
+] as const;
+
+export type Vendor = (typeof VENDORS)[number];
+
 const t: Record<string, { sw: string; en: string }> = {
   // Nav
   "nav.dashboard": { sw: "Dashibodi", en: "Dashboard" },
@@ -299,6 +313,153 @@ const t: Record<string, { sw: string; en: string }> = {
   },
   "analytics.periodToday": { sw: "Leo", en: "Today" },
   "analytics.periodAll": { sw: "Jumla", en: "All Time" },
+
+  // Purchase vendor and activation time
+  "purchase.vendor": { sw: "Ulinunua wapi?", en: "Where did you buy?" },
+  "purchase.vendorHelp": {
+    sw: "Wakala huuza ghali kidogo kwa kitengo kuliko M-Pesa au app ya benki. Tukijua sehemu, tunaweza kukuonyesha ipi ni nafuu.",
+    en: "Agents charge a bit more per unit than M-Pesa or a bank app. If we know the source, we can show you which one is cheapest.",
+  },
+  "purchase.whenActivated": {
+    sw: "Vitengo viliingia kwenye mita lini?",
+    en: "When did the units enter the meter?",
+  },
+  "purchase.whenActivatedHelp": {
+    sw: "Tumia wakati ulipoweka token kwenye mita, siyo wakati ulipolipa. Ndio wakati unaohesabika kwenye matumizi.",
+    en: "Use the time you punched the token into the meter, not the time you paid. That is the moment the units start counting.",
+  },
+  "vendor.mpesa": { sw: "M-Pesa", en: "M-Pesa" },
+  "vendor.mixx": { sw: "Mixx (Tigo Pesa)", en: "Mixx (Tigo Pesa)" },
+  "vendor.airtel": { sw: "Airtel Money", en: "Airtel Money" },
+  "vendor.halopesa": { sw: "HaloPesa", en: "HaloPesa" },
+  "vendor.bank": { sw: "App ya benki", en: "Bank app" },
+  "vendor.agent": { sw: "Wakala au duka", en: "Agent or shop" },
+  "vendor.other": { sw: "Nyingine", en: "Other" },
+  "vendor.unknown": { sw: "Haijulikani", en: "Not recorded" },
+
+  // Dashboard, restructured
+  "dashboard.balance": { sw: "Vitengo vilivyopo", en: "Units on the meter" },
+  "dashboard.runsOutIn": { sw: "Vitaisha baada ya siku {days}", en: "Runs out in {days} days" },
+  "dashboard.runsOutOn": { sw: "yaani {date}", en: "around {date}" },
+  "dashboard.runsOutUnknown": {
+    sw: "Sajili usomaji siku chache ili tujue vitaisha lini",
+    en: "Log a few more readings and we can tell you when these run out",
+  },
+  "dashboard.inUse": { sw: "Ununuzi unaotumika", en: "Purchase in use" },
+  "dashboard.dayOf": { sw: "Siku {day} kati ya takriban {total}", en: "Day {day} of about {total}" },
+  "dashboard.queued": { sw: "Bado haijaanza kutumika", en: "Not in use yet" },
+  "dashboard.queuedExplain": {
+    sw: "Vitengo {units} vya awali vinatumika kwanza, ndipo hivi vianze.",
+    en: "The earlier {units} units burn first, then this purchase starts.",
+  },
+  "dashboard.perDay": { sw: "TZS {tzs} kwa siku", en: "TZS {tzs} a day" },
+  "dashboard.estimate": { sw: "makadirio", en: "estimate" },
+  "dashboard.unitsLeftOfPurchase": {
+    sw: "Vitengo {units} vimebaki kwenye ununuzi huu",
+    en: "{units} units left from this purchase",
+  },
+
+  "dashboard.lowBalanceShort": {
+    sw: "Vitengo vinakwisha, panga kununua",
+    en: "Units are running low, plan a purchase",
+  },
+  "dashboard.logToday": {
+    sw: "Hujasajili usomaji leo",
+    en: "You have not logged a reading today",
+  },
+
+  // Mistype guard
+  "guard.title": { sw: "Hakiki usomaji huu", en: "Check this reading" },
+  "guard.tooHigh": {
+    sw: "Umeandika {entered}, lakini mita ilikuwa {last}. Mita ya LUKU hushuka, haiwezi kupanda bila ununuzi.",
+    en: "You typed {entered}, but the meter was at {last}. A LUKU meter counts down, it cannot go up without a purchase.",
+  },
+  "guard.tooHighAction": {
+    sw: "Kama ulinunua vitengo, sajili ununuzi kwanza.",
+    en: "If you bought units, log that purchase first.",
+  },
+  "guard.tooFast": {
+    sw: "Hiyo ni kWh {used} kwa saa {hours}, karibu mara {times} ya kasi yako ya kawaida.",
+    en: "That is {used} kWh in {hours} hours, about {times}x your usual rate.",
+  },
+  "guard.expected": { sw: "Tulitegemea karibu {expected} kWh", en: "We expected around {expected} kWh" },
+  "guard.saveAnyway": { sw: "Ni sahihi, hifadhi", en: "It is correct, save it" },
+  "guard.goPurchase": { sw: "Sajili ununuzi", en: "Log a purchase" },
+  "guard.fix": { sw: "Rekebisha", en: "Let me fix it" },
+
+  // Detections
+  "detect.outageTitle": { sw: "Kulikuwa na kukatika kwa umeme?", en: "Was there a power cut?" },
+  "detect.outageBody": {
+    sw: "Kati ya {from} na {to} mita ilisogea kidogo sana, kWh {rate} kwa siku badala ya {baseline}. Labda umeme ulikatika ukiwa mbali.",
+    en: "Between {from} and {to} the meter barely moved, {rate} kWh a day instead of {baseline}. Power may have been out while you were away.",
+  },
+  "detect.outageYes": { sw: "Ndiyo, sajili", en: "Yes, log it" },
+  "detect.dismiss": { sw: "Ondoa", en: "Dismiss" },
+  "detect.missingTitle": { sw: "Kuna ununuzi haukusajiliwa?", en: "Is a purchase missing?" },
+  "detect.missingBody": {
+    sw: "Mita ilipanda kwa takriban vitengo {units} kati ya {from} na {to}, bila ununuzi kusajiliwa.",
+    en: "The meter went up by about {units} units between {from} and {to}, with no purchase recorded.",
+  },
+  "detect.missingAction": { sw: "Sajili ununuzi huo", en: "Log that purchase" },
+  "detect.gapTitle": { sw: "Siku {days} bila kusajili", en: "{days} days without logging" },
+  "detect.gapBody": {
+    sw: "Kati ya {from} na {to} hukusajili usomaji. Jumla ya kWh {units} ilitumika, lakini mchanganuo wa kila siku ni makadirio.",
+    en: "You logged nothing between {from} and {to}. {units} kWh went in total, but the day by day split is an estimate.",
+  },
+  "detect.gapPurchases": {
+    sw: "Manunuzi {count} yalitokea ndani ya kipindi hicho.",
+    en: "{count} purchases happened inside that stretch.",
+  },
+  "detect.ranOutAt": { sw: "Viliisha {when}", en: "Ran out {when}" },
+  "detect.ranOutAbout": { sw: "Viliisha takriban {when}", en: "Ran out around {when}" },
+  "detect.ranOutWindow": {
+    sw: "Hujasajili usomaji wakati huo, tumekadiria kati ya {after} na {before}.",
+    en: "You were not logging then, so this is estimated between {after} and {before}.",
+  },
+  "detect.title": { sw: "Vitu vya kuangalia", en: "Worth a look" },
+
+  // AI insight
+  "insight.title": { sw: "Uchambuzi wa AI", en: "AI analysis" },
+  "insight.generate": { sw: "Chambua data yangu", en: "Analyse my data" },
+  "insight.loading": { sw: "Inachambua...", en: "Analysing..." },
+  "insight.refresh": { sw: "Chambua upya", en: "Analyse again" },
+  "insight.notConfigured": {
+    sw: "Uchambuzi wa AI haujawashwa bado. Ongeza ANTHROPIC_API_KEY kwenye mipangilio ya seva.",
+    en: "AI analysis is not switched on yet. Add ANTHROPIC_API_KEY to the server settings.",
+  },
+  "insight.error": { sw: "Imeshindikana kuchambua, jaribu tena.", en: "Could not analyse, try again." },
+  "insight.needData": {
+    sw: "Sajili usomaji zaidi kwanza, angalau nne katika siku tatu.",
+    en: "Log a few more readings first, at least four across three days.",
+  },
+  "insight.asOf": { sw: "Ilichambuliwa {when}", en: "Analysed {when}" },
+  "insight.disclaimer": {
+    sw: "Haya ni makadirio kutoka kwenye data yako mwenyewe, siyo uhakika.",
+    en: "These are estimates from your own data, not certainties.",
+  },
+
+  // Vendor analytics
+  "analytics.vendorTitle": { sw: "Bei kwa kila muuzaji", en: "Price by vendor" },
+  "analytics.perUnit": { sw: "TZS kwa kitengo", en: "TZS per unit" },
+  "analytics.vendorBest": {
+    sw: "{vendor} ndio nafuu kwako, TZS {rate} kwa kitengo. Ghali zaidi ni {worst} kwa TZS {worstRate}.",
+    en: "{vendor} is your cheapest at TZS {rate} per unit. The dearest is {worst} at TZS {worstRate}.",
+  },
+  "analytics.vendorSaving": {
+    sw: "Ukinunua {vendor} pekee, ungeokoa takriban TZS {amount} kwa manunuzi uliyofanya.",
+    en: "Buying only from {vendor} would have saved about TZS {amount} across the purchases you made.",
+  },
+  "analytics.vendorNeedData": {
+    sw: "Sajili manunuzi kutoka sehemu mbili tofauti ili kulinganisha bei.",
+    en: "Log purchases from two different places to compare prices.",
+  },
+  "analytics.vendorCount": { sw: "manunuzi {count}", en: "{count} purchases" },
+
+  // Purchase lifetimes in history
+  "history.lastedDays": { sw: "Ilidumu siku {days}", en: "Lasted {days} days" },
+  "history.stillRunning": { sw: "Inatumika sasa, siku {days}", en: "In use now, day {days}" },
+  "history.notStarted": { sw: "Bado haijaanza kutumika", en: "Not started yet" },
+  "history.vendorLabel": { sw: "Muuzaji", en: "Vendor" },
 
   // Common
   "common.loading": { sw: "Inapakia...", en: "Loading..." },

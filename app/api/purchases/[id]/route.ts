@@ -7,11 +7,11 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { units, amount_tzs, note, created_at } = body;
+  const { units, amount_tzs, note, vendor, created_at } = body;
 
   await db.execute({
-    sql: "UPDATE purchases SET units = ?, amount_tzs = ?, note = ?, created_at = ? WHERE id = ?",
-    args: [units, amount_tzs, note ?? "", created_at, parseInt(id)],
+    sql: "UPDATE purchases SET units = ?, amount_tzs = ?, note = ?, vendor = ?, created_at = ? WHERE id = ?",
+    args: [units, amount_tzs, note ?? "", vendor ?? "", created_at, parseInt(id)],
   });
 
   return NextResponse.json({ ok: true });

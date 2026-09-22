@@ -35,6 +35,7 @@ export async function initDb() {
       units REAL NOT NULL,
       amount_tzs REAL NOT NULL,
       note TEXT DEFAULT '',
+      vendor TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -54,4 +55,24 @@ export async function initDb() {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('currency', 'TZS');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('meter_no', '');
   `);
+
+  await migrate(client);
+}
+
+/** Columns added after the first release. SQLite has no ADD COLUMN IF NOT
+ *  EXISTS, so each one is attempted and a duplicate-column error is ignored. */
+async function migrate(client: Client) {
+  const added: [string, string][] = [
+    // Buying from an agent costs more per unit than M-Pesa or a bank app.
+    ["purchases", "vendor TEXT DEFAULT ''"],
+  ];
+
+  for (const [table, column] of added) {
+    try {
+      await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!/duplicate column/i.test(message)) throw e;
+    }
+  }
 }
