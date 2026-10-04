@@ -416,6 +416,13 @@ const t: Record<string, { sw: string; en: string }> = {
     sw: "Hujasajili usomaji wakati huo, tumekadiria kati ya {after} na {before}.",
     en: "You were not logging then, so this is estimated between {after} and {before}.",
   },
+  "detect.outageEndTitle": { sw: "Umeme ulirudi mapema?", en: "Did the power come back earlier?" },
+  "detect.outageEndBody": {
+    sw: "Mita ilitumia kWh {units} baada ya umeme kurudi. Kwa matumizi yako ya kawaida, umeme ulirudi takriban {when}, si {logged}.",
+    en: "The meter used {units} kWh after the power returned. At your usual rate, it came back around {when}, not {logged}.",
+  },
+  "detect.outageEndOngoing": { sw: "bado haijaisha", en: "still marked ongoing" },
+  "detect.outageEndYes": { sw: "Tumia {time}", en: "Use {time}" },
   "detect.title": { sw: "Vitu vya kuangalia", en: "Worth a look" },
 
   // AI insight

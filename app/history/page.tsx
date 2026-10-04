@@ -14,8 +14,9 @@ export default function History() {
 
   // Readings arrive newest first; the ledger wants them chronological.
   const chronological = [...readings].reverse();
+  const segments = buildSegments(chronological, purchases, outages);
   const lifetimes = purchaseLifetimes(
-    buildSegments(chronological, purchases, outages),
+    segments,
     purchases,
     chronological[0]?.reading ?? 0
   );
@@ -117,11 +118,11 @@ export default function History() {
     return `${m} ${tr("outage.minutes", lang)}`;
   };
 
-  const readingsWithDelta = readings.map((r, i) => {
-    if (i === readings.length - 1) return { ...r, delta: null as number | null };
-    const next = readings[i + 1];
-    const delta = next.reading > r.reading ? next.reading - r.reading : null;
-    return { ...r, delta };
+  // Consumption comes from the ledger, so a reading straight after a top-up
+  // shows what was used rather than nothing (or a negative number).
+  const readingsWithDelta = readings.map((r) => {
+    const seg = segments.find((s) => s.to === r.created_at);
+    return { ...r, delta: seg ? Math.round(seg.consumption * 100) / 100 : null };
   });
 
   const inputClass = "w-full rounded border border-zinc-300 bg-zinc-50 px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
@@ -225,7 +226,7 @@ export default function History() {
                       {r.reading} kWh
                       {r.delta !== null && (
                         <span className="ml-2 text-xs text-orange-500 dark:text-orange-400">
-                          -{r.delta} {tr("history.consumption", lang)}
+                          {tr("history.consumption", lang)}: {r.delta} kWh
                         </span>
                       )}
                     </p>
@@ -361,9 +362,7 @@ export default function History() {
                         {Math.round(p.amount_tzs / p.units)}/kWh
                       </span>
                     </p>
-                    {/* How long this purchase actually lasted, FIFO. The old
-                        version measured purchase-to-purchase, which counted
-                        the days a top-up sat unused behind older units. */}
+                    {/* Purchase to next top-up, or to the meter running dry. */}
                     {(() => {
                       const life = lifetimes.find((l) => l.purchaseId === p.id);
                       if (!life) return null;

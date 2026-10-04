@@ -46,9 +46,9 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
 - `lib/` — Core utilities:
   - `ledger.ts` — **The spine.** Merges readings + purchases + outages into one
     chronological list of `Segment`s, so consumption is correct across a top-up.
-    FIFO unit accounting gives each purchase a real lifetime and infers when it
-    ran out. Also holds the detections (missing purchase, suspected outage,
-    logging gap) and the mistype guard's expected-reading band. Deliberately has
+    Purchase lifetimes run top-up to top-up. Also holds the detections (missing
+    purchase, suspected outage, logging gap, outage end estimate) and the
+    mistype guard's expected-reading band. Deliberately has
     **no imports** so `node --test` can type-strip it directly.
     Any new consumption question belongs here, not in a page.
   - `db.ts` — Turso client singleton (lazy init to avoid build-time errors). Use `db` import for queries, `initDb()` for table creation. The Proxy requires `.bind(getDb())` for methods due to libSQL private fields.
@@ -83,11 +83,13 @@ Four tables, created by `initDb()` in `lib/db.ts`:
   readings is `previous + unitsPurchasedBetween - current`, never `previous - current`.
   Anything that drops the purchase term under-reports every period containing a top-up.
   Use `buildSegments()`; do not hand-roll this in a page.
-- Purchase lifetimes are **FIFO**: units already on the meter burn before newly bought
-  ones. A purchase made while units remain is `started: false` and has no lifetime yet.
-  This is why "days since purchase" is the wrong number to show.
-- Depletion times are interpolated on the cumulative-consumption curve, so they carry
-  `exhaustedEstimated` and a bracketing window. Show the uncertainty, do not hide it.
+- A top-up **merges** into the balance (the meter shows old + new at once), so a
+  purchase lives from when it lands until the next purchase, or until the meter
+  actually reads zero (`exhaustedAt`, projected from the prior rate, so it carries
+  `exhaustedEstimated`). Not FIFO: the meter does not queue tokens.
+- Outage ends logged late (or never) are re-estimated from the meter: units used after
+  the cut, divided by the burn rate, gives how long power was back. Offered as a
+  one-tap question in Detections, never applied silently.
 - Burn rate is per **active day** (outage hours removed) and ignores segments longer
   than 14 days, since a bridge across a logging break is not a daily rate.
 - Detections are **questions, never assertions**: a meter that barely moved looks

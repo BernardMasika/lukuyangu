@@ -6,9 +6,8 @@
  * app is really the same question over the same merged timeline, so it is
  * answered once, here, and read by /api/stats, the dashboard and analytics.
  *
- * Units are accounted FIFO: the units already on the meter burn before the ones
- * you just bought. That is what makes "this purchase lasted X days" honest when
- * you top up before the old units are finished.
+ * A top-up merges into the balance on the meter (the display jumps to old +
+ * new), so a purchase lives from the moment it lands until the next one.
  */
 
 export interface ReadingRow {
@@ -26,6 +25,7 @@ export interface PurchaseRow {
 }
 
 export interface OutageRow {
+  id?: number;
   start_at: string;
   end_at: string | null;
 }
@@ -245,165 +245,191 @@ export function dailySeries(
   return out;
 }
 
-// --- Cumulative consumption curve -------------------------------------------
-
-interface CumPoint {
-  at: number;
-  cum: number;
-}
-
-function cumulativeCurve(segments: Segment[]): CumPoint[] {
-  if (segments.length === 0) return [];
-  const points: CumPoint[] = [{ at: ms(segments[0].from), cum: 0 }];
-  let running = 0;
-  for (const seg of segments) {
-    running += seg.consumption;
-    points.push({ at: ms(seg.to), cum: running });
-  }
-  return points;
-}
-
-/** When did cumulative consumption reach `target` kWh? Linearly interpolated
- *  between the two readings that bracket it. Null if it has not got there yet. */
-function timeAtCum(
-  points: CumPoint[],
-  target: number
-): { at: string; estimated: boolean; after: string; before: string } | null {
-  if (points.length === 0) return null;
-
-  if (target <= points[0].cum) {
-    const iso = new Date(points[0].at).toISOString();
-    return { at: iso, estimated: false, after: iso, before: iso };
-  }
-
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1];
-    const b = points[i];
-    if (b.cum < target) continue;
-
-    const span = b.cum - a.cum;
-    const at = span > 0 ? a.at + ((target - a.cum) / span) * (b.at - a.at) : b.at;
-    return {
-      at: new Date(at).toISOString(),
-      // Only exact when it lands on a reading we actually took.
-      estimated: Math.abs(at - b.at) > MS_PER_HOUR,
-      after: new Date(a.at).toISOString(),
-      before: new Date(b.at).toISOString(),
-    };
-  }
-
-  return null;
-}
-
 export interface PurchaseLifetime {
   purchaseId: number;
   units: number;
   amount_tzs: number;
-  /** false while older units are still being burned ahead of these ones */
+  /** always true: a top-up is live on the meter the moment it is entered.
+   *  Kept so older clients reading the field do not break. */
   started: boolean;
-  /** when these particular units actually started being drawn (FIFO), null
-   *  while the purchase is still queued behind older units */
+  /** when the purchase landed on the meter */
   startedAt: string | null;
-  /** when they ran out, or null if still running */
+  /** when the meter actually hit zero on these units, null if it never did
+   *  (topped up first, or still running) */
   exhaustedAt: string | null;
   /** true when exhaustedAt was interpolated rather than observed */
   exhaustedEstimated: boolean;
   /** the window the depletion must have happened inside */
   exhaustedAfter: string | null;
   exhaustedBefore: string | null;
-  /** days these units covered, or days so far if still running */
+  /** days from this purchase to the next top-up (or to running out), or days
+   *  so far if it is the current one */
   days: number;
   running: boolean;
-  /** how long the purchase sat unused before its units were reached */
+  /** always 0 under the top-up model, see `started` */
   idleDaysBeforeStart: number;
-  /** units of this particular purchase not yet burned */
+  /** the current one: the whole balance on the meter (leftover + top-up),
+   *  because the meter merges them. 0 for finished purchases. */
   unitsRemaining: number;
   tzsPerUnit: number;
   vendor: string;
 }
 
 /**
- * How long each purchase actually lasted, FIFO.
+ * How long each purchase lasted, top-up style.
  *
- * Top up with 3 units still on the meter and those 3 burn first, so the new
- * purchase does not start its life at the moment you bought it. That gap is
- * `idleDaysBeforeStart`, and it is why the old "days since purchase" number
- * read wrong.
+ * A LUKU meter does not queue tokens: enter one with 1 unit left and the
+ * display jumps to 1 + 23.8. So a purchase lives from the moment it lands
+ * until the next one lands (its leftover rolls into the new balance), or
+ * until the meter genuinely hits zero, whichever comes first.
  */
 export function purchaseLifetimes(
   segments: Segment[],
   purchases: PurchaseRow[],
-  openingBalance: number,
+  // ponytail: unused since the FIFO model went, kept so callers stay put.
+  _openingBalance: number,
   now: Date = new Date()
 ): PurchaseLifetime[] {
-  const points = cumulativeCurve(segments);
-  if (points.length === 0) return [];
+  if (segments.length === 0) return [];
 
-  const ordered = [...purchases].sort(
-    (a, b) => ms(a.created_at) - ms(b.created_at)
-  );
-  const firstReadingMs = points[0].at;
-  const consumedSoFar = points[points.length - 1].cum;
+  const firstReadingMs = ms(segments[0].from);
+  const last = segments[segments.length - 1];
+  const lastReadingMs = ms(last.to);
 
-  // Lot boundaries on the cumulative curve: the opening balance burns first,
-  // then each purchase in the order it landed.
-  let lowerBound = openingBalance;
-  const out: PurchaseLifetime[] = [];
+  // Purchases made before the first reading are already inside the opening
+  // balance; they have no separate life.
+  const ordered = purchases
+    .filter((p) => ms(p.created_at) >= firstReadingMs)
+    .sort((a, b) => ms(a.created_at) - ms(b.created_at));
 
-  for (const p of ordered) {
-    // Purchases made before the first reading are already inside the opening
-    // balance; they have no separate lot.
-    if (ms(p.created_at) < firstReadingMs) continue;
+  // What the meter holds now: the last reading plus anything bought since.
+  const balanceNow =
+    last.endBalance +
+    ordered
+      .filter((p) => ms(p.created_at) > lastReadingMs)
+      .reduce((sum, p) => sum + p.units, 0);
 
-    const upperBound = lowerBound + p.units;
-    const startPoint = timeAtCum(points, lowerBound);
-    const endPoint = timeAtCum(points, upperBound);
-    const purchaseMs = ms(p.created_at);
+  return ordered.map((p, i) => {
+    const startMs = ms(p.created_at);
+    const nextMs = i + 1 < ordered.length ? ms(ordered[i + 1].created_at) : null;
 
-    // Queued behind older units: bought, but not a single kWh of it drawn yet.
-    // This is the case that used to print a misleading "lasting N days".
-    const started = startPoint !== null;
-    const startedMs = started
-      ? // You cannot burn units you have not bought yet.
-        Math.max(purchaseMs, ms(startPoint.at))
-      : null;
-    const endedMs = endPoint ? ms(endPoint.at) : null;
-    const days =
-      startedMs !== null
-        ? ((endedMs ?? now.getTime()) - startedMs) / MS_PER_DAY
-        : 0;
+    // Did the meter read empty before the next top-up?
+    const idx = segments.findIndex(
+      (s) =>
+        ms(s.to) > startMs &&
+        (nextMs === null || ms(s.to) <= nextMs) &&
+        s.endBalance <= 0.05
+    );
+    const empty = idx !== -1 ? segments[idx] : null;
+    let exhaustedMs: number | null = null;
+    let estimated = false;
+    if (empty) {
+      exhaustedMs = ms(empty.to);
+      // A zero reading only says it ran out somewhere in (from, to]. Project
+      // the balance forward at the previous segment's rate to place it.
+      const prevRate = segments[idx - 1]?.rate;
+      if (empty.hours > 1 && prevRate) {
+        const hoursLeft =
+          ((empty.startBalance + empty.purchasedUnits) / prevRate) * 24;
+        exhaustedMs = Math.min(
+          exhaustedMs,
+          ms(empty.from) + hoursLeft * MS_PER_HOUR
+        );
+        estimated = true;
+      }
+    }
 
-    out.push({
+    const endMs = exhaustedMs ?? nextMs;
+    const running = endMs === null;
+    const days = ((endMs ?? now.getTime()) - startMs) / MS_PER_DAY;
+
+    return {
       purchaseId: p.id,
       units: p.units,
       amount_tzs: p.amount_tzs,
-      started,
-      startedAt: startedMs !== null ? new Date(startedMs).toISOString() : null,
-      exhaustedAt: endedMs !== null ? new Date(endedMs).toISOString() : null,
-      exhaustedEstimated: endPoint?.estimated ?? false,
-      exhaustedAfter: endPoint?.after ?? null,
-      exhaustedBefore: endPoint?.before ?? null,
+      started: true,
+      startedAt: p.created_at,
+      exhaustedAt: exhaustedMs !== null ? new Date(exhaustedMs).toISOString() : null,
+      exhaustedEstimated: estimated,
+      exhaustedAfter: empty ? empty.from : null,
+      exhaustedBefore: empty ? empty.to : null,
       days: Math.max(0, Math.round(days * 10) / 10),
-      running: endedMs === null,
-      idleDaysBeforeStart:
-        startedMs !== null
-          ? Math.max(
-              0,
-              Math.round(((startedMs - purchaseMs) / MS_PER_DAY) * 10) / 10
-            )
-          : Math.max(
-              0,
-              Math.round(((now.getTime() - purchaseMs) / MS_PER_DAY) * 10) / 10
-            ),
-      unitsRemaining:
-        Math.round(
-          Math.min(p.units, Math.max(0, upperBound - consumedSoFar)) * 10
-        ) / 10,
+      running,
+      idleDaysBeforeStart: 0,
+      unitsRemaining: running ? Math.round(Math.max(0, balanceNow) * 10) / 10 : 0,
       tzsPerUnit: p.units > 0 ? Math.round((p.amount_tzs / p.units) * 10) / 10 : 0,
       vendor: p.vendor || "",
-    });
+    };
+  });
+}
 
-    lowerBound = upperBound;
+// --- Outage end inference ----------------------------------------------------
+
+export interface OutageEndEstimate {
+  outageId: number;
+  start_at: string;
+  /** what was logged, null for an outage still marked ongoing */
+  loggedEnd: string | null;
+  /** when the meter says power most likely came back */
+  estimatedEnd: string;
+  /** units the meter used after the power returned */
+  unitsAfter: number;
+}
+
+/**
+ * When did the power really come back?
+ *
+ * You were out, so the end got logged when you came home, or never. But the
+ * meter kept counting: whatever it used inside the segment beyond what the
+ * pre-cut stretch explains was drawn after the power returned. At the usual
+ * burn rate that many units take N hours, so the power came back N hours
+ * before the closing reading. An estimate, so the UI offers it as a question.
+ */
+export function estimateOutageEnds(
+  segments: Segment[],
+  outages: OutageRow[],
+  baselineRate: number,
+  // Closer to the logged end than this is noise, not a correction.
+  minShiftHours = 0.5
+): OutageEndEstimate[] {
+  if (baselineRate <= 0) return [];
+  const perHour = baselineRate / 24;
+  const preCutUnits = (s: Segment, startMs: number) =>
+    Math.max(0, (startMs - ms(s.from)) / MS_PER_HOUR) * perHour;
+  const out: OutageEndEstimate[] = [];
+
+  for (const o of outages) {
+    if (o.id === undefined) continue;
+    const startMs = ms(o.start_at);
+    const endMs = o.end_at ? ms(o.end_at) : null;
+
+    // The segment the outage ended in: the one holding the logged end, or for
+    // an ongoing outage the first one after the cut that shows real use.
+    const seg = segments.find((s) => {
+      if (ms(s.to) <= startMs) return false;
+      if (endMs !== null) return ms(s.from) < endMs && endMs <= ms(s.to);
+      return s.consumption - preCutUnits(s, startMs) > 0.05;
+    });
+    if (!seg) continue;
+
+    const unitsAfter = seg.consumption - preCutUnits(seg, startMs);
+    if (unitsAfter <= 0.05) continue; // the meter agrees with the logged end
+
+    const segTo = ms(seg.to);
+    const estimatedMs = Math.max(
+      startMs,
+      ms(seg.from),
+      segTo - (unitsAfter / perHour) * MS_PER_HOUR
+    );
+    if (((endMs ?? segTo) - estimatedMs) / MS_PER_HOUR < minShiftHours) continue;
+
+    out.push({
+      outageId: o.id,
+      start_at: o.start_at,
+      loggedEnd: o.end_at,
+      estimatedEnd: new Date(estimatedMs).toISOString(),
+      unitsAfter: Math.round(unitsAfter * 100) / 100,
+    });
   }
 
   return out;

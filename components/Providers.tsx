@@ -101,6 +101,13 @@ interface Stats {
     purchaseCount: number;
     depletionsInside: number;
   }[];
+  outageEnds: {
+    outageId: number;
+    start_at: string;
+    loggedEnd: string | null;
+    estimatedEnd: string;
+    unitsAfter: number;
+  }[];
 }
 
 interface Reading {

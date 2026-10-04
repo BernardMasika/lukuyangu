@@ -17,6 +17,7 @@ import {
   detectSuspectedOutages,
   detectLoggingGaps,
   expectedReadingRange,
+  estimateOutageEnds,
   type ReadingRow,
   type PurchaseRow,
 } from "./ledger.ts";
@@ -63,57 +64,63 @@ test("today's usage accumulates across a top-up instead of resetting to zero", (
   assert.equal(today.estimated, false);
 });
 
-test("a purchase made while old units remain has not started yet", () => {
-  // Bought 50 units with 17 still on the meter. Those 17 burn first, so the
-  // new purchase is queued, not running, and must not report a lifetime.
-  const readings = [r(1, 20, D(1)), r(2, 17, D(2)), r(3, 67, D(2, 1))];
-  const purchases = [p(1, 50, D(2, 0, 30))];
+test("a top-up merges into the balance: the old purchase ends, the new one runs", () => {
+  // The meter shows 1.05, a 23.8 token goes in, the display reads 24.85. It
+  // does not queue the new units behind the old ones.
+  const readings = [r(1, 20, D(1)), r(2, 1.05, D(10)), r(3, 24.85, D(10, 0, 2))];
+  const purchases = [p(1, 23.8, D(1, 0, 5)), p(2, 23.8, D(10, 0, 1))];
 
   const segments = buildSegments(readings, purchases);
-  const lifetimes = purchaseLifetimes(segments, purchases, 20, new Date(D(2, 2)));
+  const [first, second] = purchaseLifetimes(segments, purchases, 20, new Date(D(11)));
 
-  assert.equal(lifetimes.length, 1);
-  assert.equal(lifetimes[0].started, false);
-  assert.equal(lifetimes[0].startedAt, null);
-  assert.equal(lifetimes[0].days, 0);
-  assert.equal(lifetimes[0].unitsRemaining, 50);
-});
-
-test("FIFO gives each purchase a real lifetime and infers when it ran out", () => {
-  const readings = [
-    r(1, 20, D(1)),
-    r(2, 2, D(2)), // cum 18
-    r(3, 32, D(2, 1)), // 2 + 30 - 32, cum 18
-    r(4, 4, D(6)), // cum 46
-    r(5, 44, D(6, 1)), // 4 + 40 - 44, cum 46
-    r(6, 20, D(10)), // cum 70
-  ];
-  const purchases = [p(1, 30, D(2, 0, 30)), p(2, 40, D(6, 0, 30))];
-
-  const segments = buildSegments(readings, purchases);
-  const lifetimes = purchaseLifetimes(segments, purchases, 20, new Date(D(10)));
-
-  // Lots on the cumulative curve: opening 0-20, p1 20-50, p2 50-90.
-  const [first, second] = lifetimes;
-
-  assert.equal(first.started, true);
-  assert.notEqual(first.exhaustedAt, null);
-  // Depletion fell between two readings, so it is interpolated, not observed.
-  assert.equal(first.exhaustedEstimated, true);
-  assert.ok(
-    first.days > 4 && first.days < 4.7,
-    `expected ~4.4 days, got ${first.days}`
-  );
-  // It sat on the meter a while before its units were reached.
-  assert.ok(first.idleDaysBeforeStart > 0);
+  assert.equal(first.running, false);
+  assert.equal(first.exhaustedAt, null); // topped up, never ran dry
+  assert.equal(first.days, 9); // purchase to purchase
 
   assert.equal(second.started, true);
   assert.equal(second.running, true);
-  assert.equal(second.exhaustedAt, null);
-  assert.equal(second.unitsRemaining, 20); // 90 - 70
+  assert.equal(second.startedAt, D(10, 0, 1));
+  assert.equal(second.unitsRemaining, 24.9); // the merged balance
+});
 
-  // The moment one purchase runs out is the moment the next starts.
-  assert.equal(first.exhaustedAt, second.startedAt);
+test("a purchase that runs the meter dry ends there, not at the next top-up", () => {
+  const readings = [
+    r(1, 20, D(1)),
+    r(2, 10, D(2)), // 10/day
+    r(3, 0, D(4)), // empty somewhere in here
+    r(4, 30, D(5)),
+  ];
+  const purchases = [p(1, 0.001, D(1, 0, 1)), p(2, 30, D(4, 12))];
+  const segments = buildSegments(readings, purchases);
+  const [first] = purchaseLifetimes(segments, purchases, 20, new Date(D(6)));
+
+  // 10 units at 10/day from D2: ran out around D3, not at D4.12.
+  assert.equal(first.exhaustedEstimated, true);
+  const off = Math.abs(new Date(first.exhaustedAt!).getTime() - Date.parse(D(3)));
+  assert.ok(off < 60_000, `got ${first.exhaustedAt}`);
+});
+
+test("an outage end logged on coming home is pulled back to when the meter woke up", () => {
+  // 2.4/day = 0.1 per hour. Cut at 01:00, logged back at 13:00, but the
+  // segment used 0.1 (before the cut) + 0.3 more: three hours of power.
+  const readings = [r(1, 10, D(1)), r(2, 9.6, D(1, 13))];
+  const outages = [{ id: 7, start_at: D(1, 1), end_at: D(1, 13) }];
+  const segments = buildSegments(readings, [], outages);
+  const [est] = estimateOutageEnds(segments, outages, 2.4);
+
+  assert.equal(est.outageId, 7);
+  assert.equal(est.estimatedEnd, D(1, 10));
+  assert.equal(est.unitsAfter, 0.3);
+
+  // A meter that did not move agrees with the logged end: nothing to offer.
+  const still = buildSegments([r(1, 10, D(1)), r(2, 9.9, D(1, 13))], [], outages);
+  assert.deepEqual(estimateOutageEnds(still, outages, 2.4), []);
+
+  // Never logged as over at all: the first reading that shows use settles it.
+  const open = [{ id: 8, start_at: D(1, 1), end_at: null }];
+  const [ongoing] = estimateOutageEnds(segments, open, 2.4);
+  assert.equal(ongoing.loggedEnd, null);
+  assert.equal(ongoing.estimatedEnd, D(1, 10));
 });
 
 test("purchases made before the first reading fold into the opening balance", () => {

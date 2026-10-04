@@ -9,6 +9,7 @@ import {
   detectMissingPurchases,
   detectSuspectedOutages,
   detectLoggingGaps,
+  estimateOutageEnds,
   type ReadingRow,
   type PurchaseRow,
   type OutageRow,
@@ -24,7 +25,7 @@ export async function GET() {
   const [readingsResult, purchasesResult, outagesResult] = await Promise.all([
     db.execute({ sql: "SELECT * FROM readings ORDER BY created_at ASC", args: [] }),
     db.execute({ sql: "SELECT * FROM purchases ORDER BY created_at ASC", args: [] }),
-    db.execute({ sql: "SELECT start_at, end_at FROM outages", args: [] }),
+    db.execute({ sql: "SELECT id, start_at, end_at FROM outages", args: [] }),
   ]);
 
   const readings = readingsResult.rows as unknown as ReadingRow[];
@@ -78,12 +79,11 @@ export async function GET() {
     runsOutAt = new Date(now.getTime() + daysRemaining * DAY).toISOString();
   }
 
-  // --- Purchase lifetimes (FIFO) -------------------------------------------
+  // --- Purchase lifetimes (top-up model) ----------------------------------
   const openingBalance = readings.length > 0 ? readings[0].reading : 0;
   const lifetimes = purchaseLifetimes(segments, purchases, openingBalance, now);
 
-  // The purchase actually being burned right now is the earliest one that has
-  // started and not yet run out. If none has started, the newest is queued.
+  // The purchase in use is the latest one, unless the meter has since run dry.
   const inUse = lifetimes.find((l) => l.started && l.running) ?? null;
   const queued = inUse
     ? null
@@ -94,7 +94,11 @@ export async function GET() {
   const currentPurchase = inUse ?? queued;
   const estimatedTotalDays =
     currentPurchase && burnRate !== null && burnRate > 0
-      ? Math.round((currentPurchase.units / burnRate) * 10) / 10
+      ? // Days so far plus what the merged balance still buys, since a top-up
+        // includes whatever was left on the meter.
+        Math.round(
+          (currentPurchase.days + currentPurchase.unitsRemaining / burnRate) * 10
+        ) / 10
       : null;
 
   // --- Spending ------------------------------------------------------------
@@ -132,6 +136,8 @@ export async function GET() {
   const suspectedOutages =
     burnRate !== null ? detectSuspectedOutages(segments, burnRate).slice(-3) : [];
   const loggingGaps = detectLoggingGaps(segments, lifetimes).slice(-3);
+  const outageEnds =
+    burnRate !== null ? estimateOutageEnds(segments, outages, burnRate).slice(-3) : [];
 
   const round = (n: number | null) =>
     n !== null ? Math.round(n * 10) / 10 : null;
@@ -167,5 +173,6 @@ export async function GET() {
     missingPurchases,
     suspectedOutages,
     loggingGaps,
+    outageEnds,
   });
 }

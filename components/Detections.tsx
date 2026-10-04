@@ -85,7 +85,7 @@ const quietClass =
 
 export default function Detections() {
   const { lang } = useLang();
-  const { stats, refresh } = useData();
+  const { stats, outages: logged, refresh } = useData();
   const { dismissed, dismiss } = useDismissals();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -99,8 +99,16 @@ export default function Detections() {
   const outages = visible(stats.suspectedOutages, "outage");
   const missing = visible(stats.missingPurchases, "purchase");
   const gaps = visible(stats.loggingGaps, "gap");
+  const ends = stats.outageEnds.filter(
+    (e) => !dismissed.includes(`outageEnd:${e.outageId}:${e.estimatedEnd}`)
+  );
 
-  if (outages.length === 0 && missing.length === 0 && gaps.length === 0) {
+  if (
+    outages.length === 0 &&
+    missing.length === 0 &&
+    gaps.length === 0 &&
+    ends.length === 0
+  ) {
     return null;
   }
 
@@ -116,6 +124,24 @@ export default function Detections() {
           end_at: to,
           note: lang === "sw" ? "Imegunduliwa na mfumo" : "Detected by the app",
         }),
+      });
+      dismiss(key);
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const fixOutageEnd = async (id: number, start_at: string, end_at: string) => {
+    const key = `outageEnd:${id}:${end_at}`;
+    setBusy(key);
+    try {
+      // PUT replaces every column, so carry the note across or it is wiped.
+      const note = logged.find((o) => o.id === id)?.note ?? "";
+      await fetch(`/api/outages/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start_at, end_at, note }),
       });
       dismiss(key);
       await refresh();
@@ -150,6 +176,37 @@ export default function Detections() {
               className={actionClass}
             >
               {tr("detect.outageYes", lang)}
+            </button>
+            <button onClick={() => dismiss(key)} className={quietClass}>
+              {tr("detect.dismiss", lang)}
+            </button>
+          </Card>
+        );
+      })}
+
+      {ends.map((e) => {
+        const key = `outageEnd:${e.outageId}:${e.estimatedEnd}`;
+        return (
+          <Card
+            key={key}
+            tone="orange"
+            title={tr("detect.outageEndTitle", lang)}
+            body={tr("detect.outageEndBody", lang, {
+              units: e.unitsAfter,
+              when: formatDateTimeEAT(e.estimatedEnd),
+              logged: e.loggedEnd
+                ? formatDateTimeEAT(e.loggedEnd)
+                : tr("detect.outageEndOngoing", lang),
+            })}
+          >
+            <button
+              onClick={() => fixOutageEnd(e.outageId, e.start_at, e.estimatedEnd)}
+              disabled={busy === key}
+              className={actionClass}
+            >
+              {tr("detect.outageEndYes", lang, {
+                time: formatDateTimeEAT(e.estimatedEnd),
+              })}
             </button>
             <button onClick={() => dismiss(key)} className={quietClass}>
               {tr("detect.dismiss", lang)}
