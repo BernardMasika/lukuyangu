@@ -139,9 +139,12 @@ function Strip({ board, lang }: { board: Board; lang: Lang }) {
 
   const jump = (n: number) => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document
-      .getElementById(`pin-${n}`)
-      ?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    const card = document.getElementById(`pin-${n}`);
+    // A solved pin sits inside the collapsed Solved section: open it first, or
+    // the scroll lands on a hidden card and nothing visibly happens.
+    const folded = card?.closest("details");
+    if (folded) folded.open = true;
+    card?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
   };
 
   return (
