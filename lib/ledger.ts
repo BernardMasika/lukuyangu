@@ -444,6 +444,99 @@ export function weeklyChanges(
   return { changes: changes.reverse(), completeWeeks: weeks.length };
 }
 
+// --- Spikes ------------------------------------------------------------------
+
+export interface Spike {
+  from: string;
+  to: string;
+  hours: number;
+  activeHours: number;
+  consumption: number;
+  /** kWh per active day */
+  rate: number;
+  baseline: number;
+  /** rate / baseline */
+  ratio: number;
+  /** used beyond what the baseline would have used in the same powered hours */
+  extraKwh: number;
+  outageOverlap: boolean;
+  purchaseInside: boolean;
+  /** touches any hour between 00:00 and 04:00 EAT */
+  overnight: boolean;
+}
+
+export interface SpikeOptions {
+  minRatio?: number;
+  minExtraKwh?: number;
+  minActiveHours?: number;
+  maxSegmentDays?: number;
+}
+
+/** The evidence for one segment against a baseline, spike or not. Null when
+ *  the segment has no rate (under 6 powered minutes) or there is no baseline. */
+export function spikeEvidence(seg: Segment, baseline: number): Spike | null {
+  if (seg.rate === null || baseline <= 0) return null;
+
+  const fromMs = ms(seg.from);
+  const toMs = ms(seg.to);
+  let overnight = false;
+  for (let d = eatDayStartMs(fromMs); d < toMs; d += MS_PER_DAY) {
+    if (fromMs < d + 4 * MS_PER_HOUR && toMs > d) {
+      overnight = true;
+      break;
+    }
+  }
+
+  return {
+    from: seg.from,
+    to: seg.to,
+    hours: Math.round(seg.hours * 10) / 10,
+    activeHours: Math.round(seg.activeHours * 10) / 10,
+    consumption: Math.round(seg.consumption * 100) / 100,
+    rate: Math.round(seg.rate * 10) / 10,
+    baseline: Math.round(baseline * 100) / 100,
+    ratio: Math.round((seg.rate / baseline) * 10) / 10,
+    extraKwh:
+      Math.round((seg.consumption - (baseline * seg.activeHours) / 24) * 100) / 100,
+    outageOverlap: seg.outageHours > 0,
+    purchaseInside: seg.purchaseIds.length > 0,
+    overnight,
+  };
+}
+
+/**
+ * Stretches that ran well above normal: the pins on the investigation board.
+ *
+ * All four must hold, judged on unrounded numbers: the rate is at least
+ * `minRatio` times the baseline, it used `minExtraKwh` more than the baseline
+ * would have, it had `minActiveHours` of power, and it is not a bridge across
+ * a logging break. Evidence only. What caused it is the user's call.
+ */
+export function detectSpikes(
+  segments: Segment[],
+  baseline: number,
+  opts: SpikeOptions = {}
+): Spike[] {
+  const {
+    minRatio = 2,
+    minExtraKwh = 0.5,
+    minActiveHours = 1,
+    maxSegmentDays = 2,
+  } = opts;
+  if (baseline <= 0) return [];
+
+  return segments
+    .filter(
+      (s) =>
+        s.rate !== null &&
+        s.hours / 24 <= maxSegmentDays &&
+        s.activeHours >= minActiveHours &&
+        s.rate >= minRatio * baseline &&
+        s.consumption - (baseline * s.activeHours) / 24 >= minExtraKwh
+    )
+    .map((s) => spikeEvidence(s, baseline) as Spike);
+}
+
 export interface PurchaseLifetime {
   purchaseId: number;
   units: number;

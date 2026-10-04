@@ -22,6 +22,8 @@ import {
   monthComparison,
   weeklyChanges,
   currentBurnRate,
+  detectSpikes,
+  spikeEvidence,
   eatWeekStart,
   eatMonthStart,
   type ReadingRow,
@@ -333,4 +335,57 @@ test("a multi-day unlogged stretch (time away) does not set the daily rate", () 
   ];
   const burn = currentBurnRate(buildSegments(readings, []), new Date(D(9)));
   assert.ok(burn !== null && Math.abs(burn.rate - 3) < 1e-9, `got ${burn?.rate}`);
+});
+
+// Baseline 2.4 kWh/day = 0.1 kWh per hour keeps the arithmetic readable.
+// EAT is UTC+3, so D(1, 17) is 20:00 EAT on the 1st.
+const one = (kwh: number, from: string, to: string, outages = [] as { start_at: string; end_at: string }[]) =>
+  buildSegments([r(1, 10, from), r(2, 10 - kwh, to)], [], outages);
+
+test("a stretch well above normal is a spike, with its evidence", () => {
+  const [spike] = detectSpikes(one(1, D(1, 17), D(1, 19)), 2.4); // 1 kWh in 2h
+  assert.equal(spike.rate, 12);
+  assert.equal(spike.ratio, 5);
+  assert.equal(spike.extraKwh, 0.8); // 1 - 0.1 * 2
+  assert.equal(spike.outageOverlap, false);
+  assert.equal(spike.purchaseInside, false);
+  assert.equal(spike.overnight, false); // 20:00-22:00 EAT
+});
+
+test("each threshold rejects on its own", () => {
+  // 1.99x over 6h: 1.194 kWh is 4.776/day and +0.594 kWh, so only the ratio fails.
+  assert.deepEqual(detectSpikes(one(1.194, D(1, 17), D(1, 23)), 2.4), []);
+  // +0.49 kWh: 0.69 over 2h is 3.45x, but only 0.49 above normal.
+  assert.deepEqual(detectSpikes(one(0.69, D(1, 17), D(1, 19)), 2.4), []);
+  // 59 minutes: plenty above normal, too short to call.
+  assert.deepEqual(detectSpikes(one(1, D(1, 17), D(1, 17, 59)), 2.4), []);
+  // Over 2 days: a bridge across a logging break, not a rate.
+  assert.deepEqual(detectSpikes(one(20, D(1, 17), D(3, 18)), 2.4), []);
+  // No baseline: nothing to compare against.
+  assert.deepEqual(detectSpikes(one(1, D(1, 17), D(1, 19)), 0), []);
+});
+
+test("a stretch mostly lost to an outage is judged on its powered hours", () => {
+  // 10h stretch, 9h outage: 0.9 kWh in 1 powered hour is 21.6/day.
+  const segs = one(0.9, D(1, 10), D(1, 20), [{ start_at: D(1, 11), end_at: D(1, 20) }]);
+  const [spike] = detectSpikes(segs, 2.4);
+  assert.equal(spike.activeHours, 1);
+  assert.equal(spike.outageOverlap, true);
+  assert.equal(spike.extraKwh, 0.8);
+});
+
+test("overnight and purchase flags come from the segment, not a guess", () => {
+  // 23:00 to 01:00 EAT crosses midnight.
+  const [night] = detectSpikes(one(1, D(1, 20), D(1, 22)), 2.4);
+  assert.equal(night.overnight, true);
+
+  const withTopUp = buildSegments(
+    [r(1, 10, D(1, 17)), r(2, 19, D(1, 19))],
+    [p(1, 10, D(1, 18))]
+  ); // 10 + 10 - 19 = 1 kWh used
+  assert.equal(detectSpikes(withTopUp, 2.4)[0].purchaseInside, true);
+
+  // spikeEvidence works on any segment, spike or not, for "below threshold now".
+  const calm = spikeEvidence(one(0.2, D(1, 17), D(1, 19))[0], 2.4);
+  assert.equal(calm?.ratio, 1);
 });
