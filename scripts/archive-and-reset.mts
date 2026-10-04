@@ -13,7 +13,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const WIPE = process.argv.includes("--yes");
-const TABLES = ["readings", "purchases", "outages", "settings"] as const;
+const TABLES = ["readings", "purchases", "outages", "investigations", "settings"] as const;
 
 /** Rows are user-entered free text, so quote everything and double the quotes. */
 function toCsv(rows: Record<string, unknown>[]): string {
@@ -67,13 +67,16 @@ await db.batch(
     "DELETE FROM readings",
     "DELETE FROM purchases",
     "DELETE FROM outages",
+    // Pins point at readings that are about to go: left behind, every one
+    // would haunt the new board as "readings changed".
+    "DELETE FROM investigations",
     // The meter number belongs to the old house, and a cached AI analysis of
     // data that no longer exists would be worse than none.
     "DELETE FROM settings WHERE key IN ('meter_no', 'insight_cache')",
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('meter_no', '')",
     // SQLite keeps handing out the old ids otherwise, which is confusing when
     // the first reading of a new house is number 64.
-    "DELETE FROM sqlite_sequence WHERE name IN ('readings','purchases','outages')",
+    "DELETE FROM sqlite_sequence WHERE name IN ('readings','purchases','outages','investigations')",
   ],
   "write"
 );

@@ -28,7 +28,11 @@ export async function GET() {
     db.execute({ sql: "SELECT * FROM readings ORDER BY created_at ASC", args: [] }),
     db.execute({ sql: "SELECT * FROM purchases ORDER BY created_at ASC", args: [] }),
     db.execute({ sql: "SELECT id, start_at, end_at FROM outages", args: [] }),
-    db.execute({ sql: "SELECT seg_from, seg_to FROM investigations", args: [] }),
+    // Deployed before /api/setup has created the table: no pins yet, rather
+    // than a failed request that leaves the whole dashboard blank.
+    db
+      .execute({ sql: "SELECT seg_from, seg_to FROM investigations", args: [] })
+      .catch(() => ({ rows: [] })),
   ]);
 
   const readings = readingsResult.rows as unknown as ReadingRow[];

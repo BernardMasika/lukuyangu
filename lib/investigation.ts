@@ -109,7 +109,8 @@ export function mergeBoard(
     .map((p, i) => ({ ...p, number: i + 1 }));
 }
 
-/** Trim, collapse spaces, drop case-insensitive duplicates, and fold anything
+/** Trim, collapse spaces, lowercase custom tags (so "Generator" on one pin and
+ *  "generator" on another are one chip), drop duplicates, and fold anything
  *  matching a starter key onto it. Null when a tag is empty or too long. */
 export function normalizeCauses(raw: string[]): string[] | null {
   const starters = new Map(
@@ -123,13 +124,50 @@ export function normalizeCauses(raw: string[]): string[] | null {
     const lower = tag.toLowerCase();
     if (seen.has(lower)) continue;
     seen.add(lower);
-    out.push(starters.get(lower) ?? tag);
+    out.push(starters.get(lower) ?? lower);
   }
   return out;
 }
 
+/** Exactly the string `toISOString()` produces, which is what the readings
+ *  store. Date.parse alone accepts "Oct 4 2026", and "...00Z" next to
+ *  "...00.000Z" would give one stretch two rows past the UNIQUE key. */
 const isIso = (v: unknown): v is string =>
-  typeof v === "string" && !Number.isNaN(Date.parse(v));
+  typeof v === "string" &&
+  !Number.isNaN(Date.parse(v)) &&
+  new Date(v).toISOString() === v;
+
+const NUMBER_FIELDS = [
+  "hours",
+  "activeHours",
+  "consumption",
+  "rate",
+  "baseline",
+  "ratio",
+  "extraKwh",
+] as const;
+const BOOLEAN_FIELDS = ["outageOverlap", "purchaseInside", "overnight"] as const;
+
+/** A snapshot is rendered straight into the card, so it is rebuilt from the
+ *  Spike fields alone, each of the right type. Anything else (an object where
+ *  a number belongs, extra keys, oversized junk) becomes null rather than
+ *  being stored or crashing the board. */
+export function sanitizeSpike(raw: unknown): Spike | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.from !== "string" || typeof r.to !== "string") return null;
+  if (r.from.length > 40 || r.to.length > 40) return null;
+  const out: Record<string, unknown> = { from: r.from, to: r.to };
+  for (const k of NUMBER_FIELDS) {
+    if (typeof r[k] !== "number" || !Number.isFinite(r[k])) return null;
+    out[k] = r[k];
+  }
+  for (const k of BOOLEAN_FIELDS) {
+    if (typeof r[k] !== "boolean") return null;
+    out[k] = r[k];
+  }
+  return out as unknown as Spike;
+}
 
 /** Everything PUT accepts, checked before anything is written. */
 export function parseInvestigationInput(
@@ -160,10 +198,7 @@ export function parseInvestigationInput(
     return fail("a solved pin needs at least one cause");
   }
 
-  const snapshot =
-    typeof b.snapshot === "object" && b.snapshot !== null && !Array.isArray(b.snapshot)
-      ? (b.snapshot as Spike)
-      : null;
+  const snapshot = sanitizeSpike(b.snapshot);
 
   return {
     ok: true,
@@ -200,10 +235,7 @@ export function parseRow(raw: Record<string, unknown>): InvestigationRow {
     causes: Array.isArray(causes) ? causes.filter((c) => typeof c === "string") : [],
     notes: typeof raw.notes === "string" ? raw.notes : "",
     // `{}` is what a save without evidence stores: no numbers to show.
-    snapshot:
-      snapshot && typeof snapshot === "object" && "from" in snapshot
-        ? (snapshot as Spike)
-        : null,
+    snapshot: sanitizeSpike(snapshot),
     created_at: String(raw.created_at ?? ""),
     updated_at: String(raw.updated_at ?? ""),
   };
@@ -212,12 +244,12 @@ export function parseRow(raw: Record<string, unknown>): InvestigationRow {
 /** Tags the user invented, offered as chips on every pin. */
 export function customTags(rows: InvestigationRow[]): string[] {
   const starters = new Set<string>(STARTER_CAUSES);
-  const seen = new Map<string, string>();
+  const seen = new Set<string>();
   for (const row of rows) {
     for (const c of row.causes) {
-      if (starters.has(c)) continue;
-      if (!seen.has(c.toLowerCase())) seen.set(c.toLowerCase(), c);
+      // Lowercased here too, so rows saved before tags were normalised merge.
+      if (!starters.has(c)) seen.add(c.toLowerCase());
     }
   }
-  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  return [...seen].sort((a, b) => a.localeCompare(b));
 }

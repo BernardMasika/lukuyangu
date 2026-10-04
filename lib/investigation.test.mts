@@ -145,7 +145,56 @@ test("rows from the database parse defensively", () => {
   assert.equal(broken.snapshot, null);
 
   assert.deepEqual(customTags([parsed, row({ causes: ["guests", "Generator"] })]), [
-    "Generator",
+    "generator",
     "water pump",
   ]);
+});
+
+test("a custom tag typed in another case on another pin is the same chip", () => {
+  // Review finding: "Generator" saved on pin A, "generator" typed on pin B
+  // showed two chips. Custom tags are stored lowercase, so they cannot drift.
+  assert.deepEqual(normalizeCauses(["Generator"]), ["generator"]);
+  assert.deepEqual(
+    customTags([row({ causes: ["Generator"] }), row({ causes: ["generator"] })]),
+    ["generator"]
+  );
+});
+
+test("pin keys must be exact ISO strings, so one stretch cannot get two rows", () => {
+  const base = { status: "open", causes: [], notes: "" };
+  for (const loose of ["Oct 4 2026", "2026", "2026-10-01T17:00:00Z"]) {
+    const res = parseInvestigationInput({ ...base, seg_from: loose, seg_to: D(1, 19) });
+    assert.equal(res.ok, false, loose);
+  }
+});
+
+test("a snapshot keeps only Spike fields of the right type, or nothing", () => {
+  // Review finding: a crafted snapshot with an object in `rate` crashed the
+  // whole board once its segment vanished, and any size was stored.
+  const crafted = { ...spike, rate: { boom: 1 }, junk: "x".repeat(10_000) };
+  const res = parseInvestigationInput({
+    seg_from: D(1, 17),
+    seg_to: D(1, 19),
+    status: "open",
+    causes: [],
+    notes: "",
+    snapshot: crafted,
+  });
+  assert.ok(res.ok);
+  assert.equal(res.value.snapshot, null);
+
+  const clean = parseInvestigationInput({
+    seg_from: D(1, 17),
+    seg_to: D(1, 19),
+    status: "open",
+    causes: [],
+    notes: "",
+    snapshot: { ...spike, junk: "x".repeat(10_000) },
+  });
+  assert.ok(clean.ok);
+  assert.deepEqual(clean.value.snapshot, spike); // extra keys dropped
+
+  // The same check guards rows already in the database.
+  const stored = parseRow({ ...row({}), causes: "[]", snapshot: JSON.stringify(crafted) });
+  assert.equal(stored.snapshot, null);
 });

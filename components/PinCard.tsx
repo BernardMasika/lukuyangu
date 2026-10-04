@@ -94,7 +94,8 @@ export default function PinCard({
     setCauses((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
   const addTag = () => {
-    const tag = tagDraft.trim().replace(/\s+/g, " ").slice(0, 40);
+    // Same normalisation as the server, so the chip does not change on save.
+    const tag = tagDraft.trim().replace(/\s+/g, " ").slice(0, 40).toLowerCase();
     if (tag && !causes.some((c) => c.toLowerCase() === tag.toLowerCase())) {
       setCauses((prev) => [...prev, tag]);
     }
