@@ -33,6 +33,7 @@ const row = (over: Partial<InvestigationRow>): InvestigationRow => ({
   seg_from: D(1, 17),
   seg_to: D(1, 19),
   status: "open",
+  origin: "auto",
   causes: [],
   notes: "",
   snapshot: spike,
@@ -221,4 +222,27 @@ test("a new pin must be exactly two consecutive readings", () => {
   assert.equal(isReadingPair([D(1, 17)], D(1, 17), D(1, 19)), false); // no closing reading
   assert.equal(isReadingPair([], D(5, 1), D(5, 3)), false); // invented stretch
   assert.equal(isReadingPair([D(1, 17), D(1, 19)], D(1, 19), D(1, 17)), false); // reversed
+});
+
+test("a stretch you pinned yourself is labelled yours and never 'below threshold'", () => {
+  const calm = row({ seg_from: D(1, 19), seg_to: D(1, 21), origin: "manual" });
+  const [pin] = mergeBoard([], segments, [calm], evidenceFor);
+  assert.equal(pin.manual, true);
+  assert.equal(pin.belowThreshold, false);
+  assert.equal(pin.evidence?.ratio, 1); // live numbers still shown
+
+  const [auto] = mergeBoard([spike], segments, [], evidenceFor);
+  assert.equal(auto.manual, false);
+});
+
+test("origin is read and validated, defaulting to auto", () => {
+  const base = { seg_from: D(1, 17), seg_to: D(1, 19), status: "open", causes: [], notes: "" };
+  const plain = parseInvestigationInput(base);
+  assert.ok(plain.ok && plain.value.origin === "auto");
+  const manual = parseInvestigationInput({ ...base, origin: "manual" });
+  assert.ok(manual.ok && manual.value.origin === "manual");
+  assert.equal(parseInvestigationInput({ ...base, origin: "robot" }).ok, false);
+
+  assert.equal(parseRow({ id: 1, seg_from: "a", seg_to: "b", origin: "manual" }).origin, "manual");
+  assert.equal(parseRow({ id: 1, seg_from: "a", seg_to: "b" }).origin, "auto"); // rows from before the column
 });

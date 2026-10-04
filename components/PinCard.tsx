@@ -59,6 +59,8 @@ export default function PinCard({
           seg_from: pin.from,
           seg_to: pin.to,
           status: nextStatus,
+          // Only used when this save creates the row.
+          origin: pin.manual ? "manual" : "auto",
           causes,
           notes,
           snapshot: pin.evidence,
@@ -124,6 +126,11 @@ export default function PinCard({
             {pin.status === "new" && (
               <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
                 {tr("pin.new", lang)}
+              </span>
+            )}
+            {pin.manual && (
+              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
+                {tr("pin.manual", lang)}
               </span>
             )}
             {pin.belowThreshold && (

@@ -80,6 +80,8 @@ async function migrate(client: Client) {
   const added: [string, string][] = [
     // Buying from an agent costs more per unit than M-Pesa or a bank app.
     ["purchases", "vendor TEXT DEFAULT ''"],
+    // Pins the user placed by hand, as opposed to detected spikes.
+    ["investigations", "origin TEXT NOT NULL DEFAULT 'auto'"],
   ];
 
   for (const [table, column] of added) {

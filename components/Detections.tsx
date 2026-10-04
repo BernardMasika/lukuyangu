@@ -18,6 +18,20 @@ import { formatDateTimeEAT } from "@/lib/utils";
  */
 const DISMISSED_KEY = "luku-dismissed";
 
+/** Record keys as dismissed from outside the card list. The investigation
+ *  board calls this for every spike it has shown, so the Dashboard stops
+ *  announcing a pin the user has already looked at. */
+export function markDismissed(keys: string[]) {
+  if (keys.length === 0) return;
+  try {
+    const current: string[] = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
+    const next = [...new Set([...current, ...keys])];
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
+  } catch {
+    // Blocked storage: the card simply keeps showing, nothing breaks.
+  }
+}
+
 function useDismissals() {
   // Read once at mount rather than in an effect. Providers renders a
   // placeholder until it has mounted, so this never runs during SSR and there

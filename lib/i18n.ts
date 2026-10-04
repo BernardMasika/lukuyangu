@@ -20,6 +20,7 @@ const t: Record<string, { sw: string; en: string }> = {
   "nav.history": { sw: "Historia", en: "History" },
   "nav.analytics": { sw: "Uchambuzi", en: "Analytics" },
   "nav.settings": { sw: "Mipangilio", en: "Settings" },
+  "nav.board": { sw: "Uchunguzi", en: "Board" },
 
   // Dashboard
   "dashboard.title": { sw: "Luku Yangu", en: "Luku Yangu" },
@@ -454,6 +455,17 @@ const t: Record<string, { sw: string; en: string }> = {
   "pin.extra": { sw: "+{kwh} kWh zaidi ya kawaida, takriban TZS {tzs}", en: "+{kwh} kWh above normal, about TZS {tzs}" },
   "pin.noNumbers": { sw: "Takwimu hazipatikani", en: "Numbers unavailable" },
   "pin.new": { sw: "Mpya", en: "New" },
+  "pin.manual": { sw: "Umeiweka wewe", en: "Pinned by you" },
+  "investigate.pinStretch": { sw: "+ Weka alama kwenye kipindi", en: "+ Pin a stretch" },
+  "investigate.pickTitle": { sw: "Chagua kipindi cha kuchunguza", en: "Pick a stretch to investigate" },
+  "investigate.pickHint": {
+    sw: "Kila kipindi ni kati ya usomaji miwili, siku 30 zilizopita. Kwa vipindi vidogo zaidi, sajili usomaji mara nyingi zaidi.",
+    en: "Each stretch runs between two readings, last 30 days. For finer pins, log readings more often.",
+  },
+  "investigate.used": { sw: "kWh {kwh} zimetumika", en: "{kwh} kWh used" },
+  "investigate.onBoard": { sw: "Iko kwenye ubao", en: "On the board" },
+  "investigate.close": { sw: "Funga", en: "Close" },
+  "investigate.pinFailed": { sw: "Haikuwekwa, jaribu tena.", en: "Not pinned, try again." },
   "pin.belowThreshold": { sw: "Chini ya kizingiti sasa", en: "Below threshold now" },
   "pin.readingsChanged": { sw: "Usomaji umebadilika", en: "Readings changed" },
   "pin.outage": { sw: "kukatika kwa umeme", en: "outage overlapped" },

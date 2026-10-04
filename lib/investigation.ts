@@ -21,12 +21,15 @@ export const MAX_TAG = 40;
 export const MAX_CAUSES = 12;
 
 export type Status = "open" | "solved";
+/** auto = detected as a spike; manual = a stretch the user pinned. */
+export type Origin = "auto" | "manual";
 
 export interface InvestigationRow {
   id: number;
   seg_from: string;
   seg_to: string;
   status: Status;
+  origin: Origin;
   causes: string[];
   notes: string;
   /** the evidence as it was when first saved, null if none was sent */
@@ -43,8 +46,11 @@ export interface Pin {
   status: "new" | Status;
   /** live numbers when the segment still exists, else the snapshot */
   evidence: Spike | null;
-  /** saved, segment still exists, but it no longer passes the spike rule */
+  /** saved, segment still exists, but it no longer passes the spike rule
+   *  (never for a manual pin: it was not there because of the rule) */
   belowThreshold: boolean;
+  /** a stretch the user pinned, rather than one the app detected */
+  manual: boolean;
   /** saved, but a bounding reading was edited or deleted */
   readingsChanged: boolean;
   row: InvestigationRow | null;
@@ -54,6 +60,7 @@ export interface InvestigationInput {
   seg_from: string;
   seg_to: string;
   status: Status;
+  origin: Origin;
   causes: string[];
   notes: string;
   snapshot: Spike | null;
@@ -84,8 +91,10 @@ export function mergeBoard(
       to: row.seg_to,
       status: row.status,
       evidence: spike ?? live ?? row.snapshot,
-      // Only "below" when there is a live threshold to be below.
-      belowThreshold: !spike && live !== null,
+      // Only "below" when there is a live threshold to be below, and only for
+      // pins that were there because of it.
+      belowThreshold: row.origin === "auto" && !spike && live !== null,
+      manual: row.origin === "manual",
       readingsChanged: seg === undefined,
       row,
     });
@@ -99,6 +108,7 @@ export function mergeBoard(
       status: "new",
       evidence: s,
       belowThreshold: false,
+      manual: false,
       readingsChanged: false,
       row: null,
     });
@@ -191,6 +201,9 @@ export function parseInvestigationInput(
   if (!Array.isArray(b.causes) || !b.causes.every((c) => typeof c === "string")) {
     return fail("causes must be a list of text tags");
   }
+  if (b.origin !== undefined && b.origin !== "auto" && b.origin !== "manual") {
+    return fail("origin must be auto or manual");
+  }
   // Cap what was sent before doing any work on it, not what survives.
   if (b.causes.length > MAX_CAUSES) return fail(`at most ${MAX_CAUSES} causes`);
   const causes = normalizeCauses(b.causes as string[]);
@@ -207,6 +220,7 @@ export function parseInvestigationInput(
       seg_from: b.seg_from,
       seg_to: b.seg_to,
       status: b.status,
+      origin: b.origin === "manual" ? "manual" : "auto",
       causes,
       notes: b.notes,
       snapshot,
@@ -233,6 +247,7 @@ export function parseRow(raw: Record<string, unknown>): InvestigationRow {
     seg_from: String(raw.seg_from),
     seg_to: String(raw.seg_to),
     status: raw.status === "solved" ? "solved" : "open",
+    origin: raw.origin === "manual" ? "manual" : "auto",
     causes: Array.isArray(causes) ? causes.filter((c) => typeof c === "string") : [],
     notes: typeof raw.notes === "string" ? raw.notes : "",
     // `{}` is what a save without evidence stores: no numbers to show.

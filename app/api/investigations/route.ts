@@ -54,6 +54,8 @@ export async function GET() {
       to: s.to,
       hours: Math.round(s.hours * 100) / 100,
       rate: s.rate === null ? null : Math.round(s.rate * 10) / 10,
+      // For "+ Pin a stretch": what each stretch looks like against normal.
+      evidence: baseline !== null ? spikeEvidence(s, baseline) : null,
     }));
 
   const units = purchases.reduce((sum, p) => sum + p.units, 0);
@@ -106,12 +108,12 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  // The snapshot is written once, on insert: it records the numbers as they
-  // were when the user started investigating.
+  // The snapshot and origin are written once, on insert: the numbers as they
+  // were when the investigation started, and who put the pin there.
   await db.execute({
     sql: `INSERT INTO investigations
-            (seg_from, seg_to, status, causes, notes, snapshot, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (seg_from, seg_to, status, origin, causes, notes, snapshot, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (seg_from, seg_to) DO UPDATE SET
             status = excluded.status,
             causes = excluded.causes,
@@ -121,6 +123,7 @@ export async function PUT(req: NextRequest) {
       v.seg_from,
       v.seg_to,
       v.status,
+      v.origin,
       JSON.stringify(v.causes),
       v.notes,
       JSON.stringify(v.snapshot ?? {}),

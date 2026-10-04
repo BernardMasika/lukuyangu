@@ -80,7 +80,7 @@ Five tables, created by `initDb()` in `lib/db.ts`:
 - **purchases** — `id` INTEGER PK, `units` REAL, `amount_tzs` REAL, `note` TEXT, `vendor` TEXT, `created_at` TEXT
 - **outages** — `id` INTEGER PK, `start_at` TEXT (ISO 8601), `end_at` TEXT (nullable — NULL = ongoing), `note` TEXT, `created_at` TEXT
 - **settings** — `key` TEXT PK, `value` TEXT (key-value store for currency, meter_no, etc.)
-- **investigations** — `id` INTEGER PK, `seg_from`/`seg_to` TEXT (UNIQUE pair, the segment's reading timestamps), `status` ('open'|'solved'), `causes` JSON TEXT, `notes` TEXT, `snapshot` JSON TEXT (evidence at first save), `created_at`, `updated_at`. Rows are created lazily on first save.
+- **investigations** — `id` INTEGER PK, `seg_from`/`seg_to` TEXT (UNIQUE pair, the segment's reading timestamps), `status` ('open'|'solved'), `causes` JSON TEXT, `notes` TEXT, `origin` ('auto'|'manual', added by `migrate()`), `snapshot` JSON TEXT (evidence at first save), `created_at`, `updated_at`. Rows are created lazily on first save.
 
 ## Key Domain Logic
 
@@ -118,7 +118,7 @@ Five tables, created by `initDb()` in `lib/db.ts`:
 - **Analytics** (`/analytics`) — Historical analysis: daily/weekly/monthly charts, time-of-day breakdown (Today/All Time toggle), cost summary, month comparison, change detection, outage stats, AI summary export
 - **Plan** (`/plan`) — Future-focused: daily usage rate with trend, depletion prediction with calendar date, purchase calculator (budget-to-days or days-to-cost), contextual tips (logging advice, generator awareness)
 - **Settings** (`/settings`) — Meter number, language, theme, export, install app, daily reminder
-- **Investigate** (`/investigate`) — Not a nav tab; linked from the Dashboard spike card and Analytics. 30-day rate strip with numbered pins, open/solved pin cards with notes and causes.
+- **Board** (`/investigate`) — 6th nav tab, also linked from the Dashboard spike card and Analytics. Opening it marks its new pins as seen, so the Dashboard card stops announcing them. "+ Pin a stretch" pins any reading-to-reading stretch from the last 30 days (`origin = 'manual'`, labelled "Pinned by you", never "below threshold"). 30-day rate strip with numbered pins, open/solved pin cards with notes and causes.
 
 ## i18n Style
 
@@ -133,7 +133,7 @@ Five tables, created by `initDb()` in `lib/db.ts`:
 - English default language, Swahili toggle (stored in localStorage as `luku-lang`)
 - TANESCO blue (#003399) accent, green for positive trends, red/orange for high consumption
 - Theme and language managed via React Context in `components/Providers.tsx`
-- Bottom tab navigation (Dashboard, History, Analytics, Plan/Mipango, Settings)
+- Bottom tab navigation (Dashboard, History, Analytics, Board/Uchunguzi, Plan/Mipango, Settings)
 - Impeccable design plugin is available — **always ask user before running any Impeccable command**
 
 ## PWA & Notifications
