@@ -5,14 +5,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   buildSegments,
-  burnRateFrom,
+  currentBurnRate,
   dailySeries,
+  hourlyProfile,
   purchaseLifetimes,
   type ReadingRow,
   type PurchaseRow,
   type OutageRow,
 } from "@/lib/ledger";
-import { getTimePeriod } from "@/lib/utils";
+import { byPeriod } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -93,26 +94,23 @@ async function buildBriefing() {
   const outages = outagesResult.rows as unknown as OutageRow[];
 
   const segments = buildSegments(readings, purchases, outages);
-  const burn = burnRateFrom(segments);
+  const burn = currentBurnRate(segments);
   const lifetimes = purchaseLifetimes(
     segments,
     purchases,
     readings.length > 0 ? readings[0].reading : 0
   );
 
-  // Which parts of the day the units actually go, by Swahili period.
-  const byPeriod: Record<string, { units: number; hours: number }> = {};
-  for (const seg of segments) {
-    const period = getTimePeriod(seg.from);
-    byPeriod[period] ??= { units: 0, hours: 0 };
-    byPeriod[period].units += seg.consumption;
-    byPeriod[period].hours += seg.activeHours;
-  }
+  // Which parts of the day the units actually go, by Swahili period. Each
+  // stretch is split across the hours it spans, same as the Analytics page.
+  const profile = hourlyProfile(segments);
+  const periodUnits = byPeriod(profile.units);
+  const periodHours = byPeriod(profile.hours);
   const periodRates = Object.fromEntries(
-    Object.entries(byPeriod).map(([k, v]) => [
-      k,
-      v.hours > 0 ? Math.round((v.units / (v.hours / 24)) * 10) / 10 : null,
-    ])
+    Object.entries(periodUnits).map(([k, units]) => {
+      const hours = periodHours[k as keyof typeof periodHours];
+      return [k, hours > 0 ? Math.round((units / (hours / 24)) * 10) / 10 : null];
+    })
   );
 
   return {

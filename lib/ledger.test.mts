@@ -18,6 +18,12 @@ import {
   detectLoggingGaps,
   expectedReadingRange,
   estimateOutageEnds,
+  hourlyProfile,
+  monthComparison,
+  weeklyChanges,
+  currentBurnRate,
+  eatWeekStart,
+  eatMonthStart,
   type ReadingRow,
   type PurchaseRow,
 } from "./ledger.ts";
@@ -77,7 +83,6 @@ test("a top-up merges into the balance: the old purchase ends, the new one runs"
   assert.equal(first.exhaustedAt, null); // topped up, never ran dry
   assert.equal(first.days, 9); // purchase to purchase
 
-  assert.equal(second.started, true);
   assert.equal(second.running, true);
   assert.equal(second.startedAt, D(10, 0, 1));
   assert.equal(second.unitsRemaining, 24.9); // the merged balance
@@ -201,7 +206,6 @@ test("a logging gap keeps its exact total but reports what happened inside", () 
   assert.equal(gaps[0].purchaseCount, 1);
   // The opening 20 units must have run out somewhere in there.
   assert.equal(gaps[0].depletionsInside, 0); // the opening lot is not a purchase
-  assert.equal(lifetimes[0].started, true);
 });
 
 test("a window that cuts a segment in half is prorated and says so", () => {
@@ -253,4 +257,80 @@ test("a segment bridging a long break must not be averaged into a recent rate", 
 test("one reading is not enough to build a ledger", () => {
   assert.deepEqual(buildSegments([r(1, 20, D(1))], []), []);
   assert.equal(expectedReadingRange([], [], 5), null);
+});
+
+test("a window's rate divides by the days it covers, not by a different set", () => {
+  // The dashboard's 7-day average added a prorated slice of a straddling
+  // segment on top, but only divided by segments that started inside.
+  const readings = [r(1, 30, D(1)), r(2, 20, D(5)), r(3, 18, D(6))];
+  const segments = buildSegments(readings, []);
+  const w = consumptionBetween(segments, new Date(D(4)), new Date(D(6)));
+
+  assert.equal(w.units, 4.5); // 2.5 prorated + 2
+  assert.equal(w.days, 2);
+  assert.equal(w.activeDays, 2);
+});
+
+test("the hour profile splits a stretch across the hours it spans", () => {
+  // 00:00 to 10:00 EAT is 21:00 to 07:00 UTC the day before.
+  const readings = [r(1, 10, D(1, 21)), r(2, 5, D(2, 7))];
+  const { units, hours } = hourlyProfile(buildSegments(readings, []));
+
+  for (let h = 0; h < 10; h++) assert.ok(Math.abs(units[h] - 0.5) < 1e-9, `hour ${h}`);
+  assert.equal(units[10], 0);
+  assert.equal(hours.reduce((a, b) => a + b, 0), 10);
+
+  // A stretch longer than a day says how much, not when: left out.
+  const long = buildSegments([r(1, 10, D(1)), r(2, 5, D(3))], []);
+  assert.equal(hourlyProfile(long).units.reduce((a, b) => a + b, 0), 0);
+});
+
+test("months compare per day of data, so a short month is not read as a drop", () => {
+  // 9 days of September at 1.5/day, 3 days of October at 3/day.
+  const readings = [r(1, 50, D(21, 21)), r(2, 36.5, D(30, 21)), r(3, 27.5, D(33, 21))];
+  const now = new Date(D(33, 21)); // 4 Oct 00:00 EAT
+  const m = monthComparison(buildSegments(readings, []), now);
+
+  assert.equal(m.lastPerDay, 1.5);
+  assert.equal(m.thisPerDay, 3);
+  assert.equal(m.deltaPct, 100); // the old totals said "down 33%"
+});
+
+test("weeks are EAT Mondays and a week in progress is never compared", () => {
+  // Monday 7 Sept 00:00 EAT is Sunday 6 Sept 21:00 UTC.
+  assert.equal(eatWeekStart(new Date(D(9, 12))).toISOString(), D(6, 21));
+  // 30 Sept 23:00 EAT is still September; 01:00 EAT the next hour is October.
+  assert.equal(eatMonthStart(new Date(D(30, 20)), 1).toISOString(), D(30, 21));
+  assert.equal(eatMonthStart(new Date(D(30, 22))).toISOString(), D(30, 21));
+
+  // Six whole weeks at 10/day, then a sixth week double that, then 2 days in.
+  const readings = [r(1, 1000, D(6, 21))];
+  let bal = 1000;
+  for (let w = 1; w <= 6; w++) {
+    bal -= w === 6 ? 140 : 70;
+    readings.push(r(w + 1, bal, D(6 + 7 * w, 21)));
+  }
+  readings.push(r(9, bal - 2, D(6 + 42 + 2, 21)));
+  const { changes, completeWeeks } = weeklyChanges(
+    buildSegments(readings, []),
+    new Date(D(6 + 42 + 2, 21))
+  );
+
+  assert.equal(completeWeeks, 6);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].direction, "above");
+  assert.equal(changes[0].deviation, 100);
+});
+
+test("a multi-day unlogged stretch (time away) does not set the daily rate", () => {
+  // 3/day at home, then five days away at 1/day, then home again.
+  const readings = [
+    r(1, 100, D(1)),
+    r(2, 97, D(2)),
+    r(3, 94, D(3)),
+    r(4, 89, D(8)), // the away bridge
+    r(5, 86, D(9)),
+  ];
+  const burn = currentBurnRate(buildSegments(readings, []), new Date(D(9)));
+  assert.ok(burn !== null && Math.abs(burn.rate - 3) < 1e-9, `got ${burn?.rate}`);
 });

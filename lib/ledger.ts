@@ -144,12 +144,22 @@ export function consumptionBetween(
   segments: Segment[],
   windowStart: Date,
   windowEnd: Date
-): { units: number; estimated: boolean; hasData: boolean } {
+): {
+  units: number;
+  estimated: boolean;
+  hasData: boolean;
+  /** days of the window the readings actually cover */
+  days: number;
+  /** the same, with outage hours removed: divide by this for a burn rate */
+  activeDays: number;
+} {
   const startMs = windowStart.getTime();
   const endMs = windowEnd.getTime();
   let units = 0;
   let estimated = false;
   let hasData = false;
+  let coveredMs = 0;
+  let activeHours = 0;
 
   for (const seg of segments) {
     const segStart = ms(seg.from);
@@ -161,15 +171,25 @@ export function consumptionBetween(
     const overlapEnd = Math.min(segEnd, endMs);
     const full = segEnd - segStart;
 
+    coveredMs += overlapEnd - overlapStart;
     if (overlapStart <= segStart && overlapEnd >= segEnd) {
       units += seg.consumption;
+      activeHours += seg.activeHours;
     } else if (full > 0) {
-      units += seg.consumption * ((overlapEnd - overlapStart) / full);
+      const fraction = (overlapEnd - overlapStart) / full;
+      units += seg.consumption * fraction;
+      activeHours += seg.activeHours * fraction;
       estimated = true;
     }
   }
 
-  return { units: Math.round(units * 10) / 10, estimated, hasData };
+  return {
+    units: Math.round(units * 10) / 10,
+    estimated,
+    hasData,
+    days: Math.round((coveredMs / MS_PER_DAY) * 100) / 100,
+    activeDays: Math.round((activeHours / 24) * 100) / 100,
+  };
 }
 
 /**
@@ -245,13 +265,189 @@ export function dailySeries(
   return out;
 }
 
+/** The burn rate every page shows: the last 30 days, or all history when that
+ *  is too thin to commit to. Lives here so stats, the summary and the AI
+ *  insight cannot each pick their own window and disagree.
+ *
+ *  The window matches on `from`, not `to`. After a break in logging the
+ *  bridging segment ends inside the window but starts months earlier, and
+ *  counting it drags the rate to nearly zero. */
+export function currentBurnRate(
+  segments: Segment[],
+  now: Date = new Date(),
+  // An unlogged stretch longer than this is usually time away: the total is
+  // real, but it is not the daily habit the runway should be projected from.
+  // (24-30 Sept 2026 ran at 1.1/day with the house empty and dragged the rate
+  // from 3.1 to 2.1.) Raise it if you log less than every couple of days.
+  maxSegmentDays = 2
+): ReturnType<typeof burnRateFrom> {
+  const cutoff = now.getTime() - 30 * MS_PER_DAY;
+  const recent = segments.filter((s) => ms(s.from) >= cutoff);
+  return (
+    burnRateFrom(recent, 3, 3, maxSegmentDays) ??
+    burnRateFrom(segments, 3, 3, maxSegmentDays)
+  );
+}
+
+// --- Calendar windows in Dar es Salaam ---------------------------------------
+// Tanzania has no daylight saving, so EAT is a fixed UTC+3 and calendar maths
+// needs no Intl here (which keeps the ledger import-free and testable).
+
+const EAT_OFFSET_MS = 3 * MS_PER_HOUR;
+
+function eatDayStartMs(t: number): number {
+  return Math.floor((t + EAT_OFFSET_MS) / MS_PER_DAY) * MS_PER_DAY - EAT_OFFSET_MS;
+}
+
+/** YYYY-MM-DD of the EAT calendar day `at` falls in. */
+export function eatDateKey(at: Date): string {
+  return new Date(at.getTime() + EAT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Monday 00:00 EAT of the week `at` falls in. */
+export function eatWeekStart(at: Date): Date {
+  const day = eatDayStartMs(at.getTime());
+  const dow = new Date(day + EAT_OFFSET_MS).getUTCDay(); // 0 = Sunday
+  return new Date(day - ((dow + 6) % 7) * MS_PER_DAY);
+}
+
+/** The 1st at 00:00 EAT, `offset` months from the month `at` falls in. */
+export function eatMonthStart(at: Date, offset = 0): Date {
+  const local = new Date(at.getTime() + EAT_OFFSET_MS);
+  return new Date(
+    Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + offset, 1) -
+      EAT_OFFSET_MS
+  );
+}
+
+/**
+ * Units and elapsed hours by EAT hour of day (index 0-23).
+ *
+ * Each segment is split across the hours it actually spans, so a stretch from
+ * 00:39 to 10:25 is shared between night and morning instead of being dumped on
+ * whichever end the reading happened to land. Segments longer than a day are
+ * left out: they say how much was used, not when.
+ */
+export function hourlyProfile(
+  segments: Segment[],
+  windowStart?: Date,
+  windowEnd?: Date,
+  maxSegmentHours = 24
+): { units: number[]; hours: number[] } {
+  const units = new Array<number>(24).fill(0);
+  const hours = new Array<number>(24).fill(0);
+  const lo = windowStart ? windowStart.getTime() : -Infinity;
+  const hi = windowEnd ? windowEnd.getTime() : Infinity;
+
+  for (const seg of segments) {
+    if (seg.hours > maxSegmentHours) continue;
+    const from = ms(seg.from);
+    const to = ms(seg.to);
+    const full = to - from;
+    if (full <= 0) continue;
+
+    // ponytail: spread evenly by elapsed time, outage hours included. Weight by
+    // active time if outages start skewing the profile.
+    const end = Math.min(to, hi);
+    for (let t = Math.max(from, lo); t < end; ) {
+      // EAT is a whole-hour offset, so UTC hour boundaries are EAT ones too.
+      const next = Math.min(end, (Math.floor(t / MS_PER_HOUR) + 1) * MS_PER_HOUR);
+      const h = new Date(t + EAT_OFFSET_MS).getUTCHours();
+      units[h] += seg.consumption * ((next - t) / full);
+      hours[h] += (next - t) / MS_PER_HOUR;
+      t = next;
+    }
+  }
+
+  return { units, hours };
+}
+
+/**
+ * This month against last, per day of data.
+ *
+ * Totals are useless here: four days of October against a whole September
+ * always reads as "down", even when the daily use doubled.
+ */
+export function monthComparison(segments: Segment[], now: Date = new Date()) {
+  const thisStart = eatMonthStart(now);
+  const thisMonth = consumptionBetween(segments, thisStart, now);
+  const lastMonth = consumptionBetween(segments, eatMonthStart(now, -1), thisStart);
+  const perDay = (w: { units: number; days: number }) =>
+    w.days >= 1 ? Math.round((w.units / w.days) * 10) / 10 : null;
+  const thisPerDay = perDay(thisMonth);
+  const lastPerDay = perDay(lastMonth);
+
+  return {
+    thisMonth,
+    lastMonth,
+    thisPerDay,
+    lastPerDay,
+    deltaPct:
+      thisPerDay !== null && lastPerDay !== null && lastPerDay > 0
+        ? Math.round(((thisPerDay - lastPerDay) / lastPerDay) * 100)
+        : null,
+  };
+}
+
+export interface WeekChange {
+  weekStart: string;
+  consumption: number;
+  baseline: number;
+  deviation: number;
+  direction: "above" | "below";
+}
+
+/**
+ * Weeks that moved 20% or more against the four before them.
+ *
+ * Only whole weeks (Monday to Monday, EAT) that the readings cover end to end
+ * count. A half-finished week against full ones always looks like a collapse.
+ */
+export function weeklyChanges(
+  segments: Segment[],
+  now: Date = new Date(),
+  baselineWeeks = 4,
+  thresholdPct = 20
+): { changes: WeekChange[]; completeWeeks: number } {
+  if (segments.length === 0) return { changes: [], completeWeeks: 0 };
+
+  const week = 7 * MS_PER_DAY;
+  const first = ms(segments[0].from);
+  const last = Math.min(ms(segments[segments.length - 1].to), now.getTime());
+
+  let ws = eatWeekStart(new Date(first)).getTime();
+  if (ws < first) ws += week;
+  const weeks: { start: number; units: number }[] = [];
+  for (; ws + week <= last; ws += week) {
+    weeks.push({
+      start: ws,
+      units: consumptionBetween(segments, new Date(ws), new Date(ws + week)).units,
+    });
+  }
+
+  const changes: WeekChange[] = [];
+  for (let i = baselineWeeks; i < weeks.length; i++) {
+    const prior = weeks.slice(i - baselineWeeks, i);
+    const baseline = prior.reduce((sum, w) => sum + w.units, 0) / baselineWeeks;
+    if (baseline <= 0) continue;
+    const deviation = ((weeks[i].units - baseline) / baseline) * 100;
+    if (Math.abs(deviation) < thresholdPct) continue;
+    changes.push({
+      weekStart: new Date(weeks[i].start).toISOString(),
+      consumption: weeks[i].units,
+      baseline: Math.round(baseline * 10) / 10,
+      deviation: Math.round(deviation * 10) / 10,
+      direction: deviation > 0 ? "above" : "below",
+    });
+  }
+
+  return { changes: changes.reverse(), completeWeeks: weeks.length };
+}
+
 export interface PurchaseLifetime {
   purchaseId: number;
   units: number;
   amount_tzs: number;
-  /** always true: a top-up is live on the meter the moment it is entered.
-   *  Kept so older clients reading the field do not break. */
-  started: boolean;
   /** when the purchase landed on the meter */
   startedAt: string | null;
   /** when the meter actually hit zero on these units, null if it never did
@@ -266,8 +462,6 @@ export interface PurchaseLifetime {
    *  so far if it is the current one */
   days: number;
   running: boolean;
-  /** always 0 under the top-up model, see `started` */
-  idleDaysBeforeStart: number;
   /** the current one: the whole balance on the meter (leftover + top-up),
    *  because the meter merges them. 0 for finished purchases. */
   unitsRemaining: number;
@@ -347,7 +541,6 @@ export function purchaseLifetimes(
       purchaseId: p.id,
       units: p.units,
       amount_tzs: p.amount_tzs,
-      started: true,
       startedAt: p.created_at,
       exhaustedAt: exhaustedMs !== null ? new Date(exhaustedMs).toISOString() : null,
       exhaustedEstimated: estimated,
@@ -355,7 +548,6 @@ export function purchaseLifetimes(
       exhaustedBefore: empty ? empty.to : null,
       days: Math.max(0, Math.round(days * 10) / 10),
       running,
-      idleDaysBeforeStart: 0,
       unitsRemaining: running ? Math.round(Math.max(0, balanceNow) * 10) / 10 : 0,
       tzsPerUnit: p.units > 0 ? Math.round((p.amount_tzs / p.units) * 10) / 10 : 0,
       vendor: p.vendor || "",

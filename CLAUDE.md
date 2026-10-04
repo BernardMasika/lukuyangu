@@ -38,7 +38,6 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
   - `outages/` + `[id]/` — CRUD for power outages (TANESCO cuts)
   - `stats/` — All computed stats, derived from `lib/ledger.ts` in one pass
   - `insight/` — Claude-backed analysis (GET reads cache, POST regenerates)
-  - `changes/` — Weekly anomaly detection (>=20% deviation)
   - `summary/` — AI clipboard text generator (sw/en)
   - `settings/` — Key-value settings
   - `export/` — CSV download
@@ -48,12 +47,14 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
     chronological list of `Segment`s, so consumption is correct across a top-up.
     Purchase lifetimes run top-up to top-up. Also holds the detections (missing
     purchase, suspected outage, logging gap, outage end estimate) and the
-    mistype guard's expected-reading band. Deliberately has
+    mistype guard's expected-reading band. Calendar windows (EAT weeks,
+    months, hour-of-day profile, month comparison, weekly changes) live here
+    too, using a fixed UTC+3 offset (Tanzania has no DST). Deliberately has
     **no imports** so `node --test` can type-strip it directly.
     Any new consumption question belongs here, not in a page.
   - `db.ts` — Turso client singleton (lazy init to avoid build-time errors). Use `db` import for queries, `initDb()` for table creation. The Proxy requires `.bind(getDb())` for methods due to libSQL private fields.
   - `i18n.ts` — Flat `{ key: { sw, en } }` translation map, `tr()` helper with variable interpolation
-  - `utils.ts` — Consumption calc, burn rate (with outage adjustment), predictions, weekly change detection, Swahili time-of-day periods. All date helpers use `Africa/Dar_es_Salaam` timezone. Includes `isoToDatetimeLocal()`, `datetimeLocalToISO()`, `getTimePeriod()`, and `calcOutageDurationDays()`.
+  - `utils.ts` — Display and date helpers only: EAT formatting, Swahili time-of-day periods (`getTimePeriod()`, `periodOfHour()`, `byPeriod()`), `isoToDatetimeLocal()`, `datetimeLocalToISO()`, `startOfDayEAT()`. No consumption maths: that is all in the ledger.
 - `components/` — Shared UI:
   - `Detections.tsx` — One-tap questions raised by the ledger, dismissals in localStorage
   - `AiInsight.tsx` — Claude analysis card (Analytics page), inert without an API key
@@ -97,7 +98,9 @@ Four tables, created by `initDb()` in `lib/db.ts`:
 - All timestamps in EAT (Africa/Dar_es_Salaam, UTC+3), stored as ISO 8601 TEXT in SQLite.
 - Burn rate needs 3+ readings over 3+ days before showing predictions. Outage hours are subtracted from elapsed time for accuracy.
 - Swahili time-of-day periods: Alfajiri (04-05), Asubuhi (06-11), Mchana (12-15), Jioni (16-18), Usiku (19-03). Shown as badges on readings/purchases and as analytics breakdown.
-- Change detection needs 5+ weeks of data before flagging anomalies (>=20% deviation from 4-week rolling baseline).
+- Change detection (`weeklyChanges()`, computed client-side on Analytics) needs 5+ complete EAT Monday-to-Monday weeks before flagging anomalies (>=20% deviation from the 4 weeks before). The week in progress is never compared.
+- Window rates divide by the days the window covers (`consumptionBetween().days` / `.activeDays`), never by a separately chosen set of segments. Month comparison is per day of data, not totals.
+- "Runs out" is projected from the last reading plus any token entered since, not from now.
 - Purchase duration tracking: each purchase shows how long it lasted (days until next purchase) or "Day X so far" for the current purchase. Dashboard shows last purchase with estimated total days.
 - Generator users: LUKU meter doesn't count generator power, so units last longer during outages. System accounts for this correctly via outage tracking.
 - All insights derived from user data only, never assume appliances or lifestyle.

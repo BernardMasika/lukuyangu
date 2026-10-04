@@ -3,8 +3,18 @@
 import { useState } from "react";
 import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
-import { formatDateEAT, getTimePeriod, getWeekStart, TZ, type TimePeriod } from "@/lib/utils";
-import { buildSegments, dailySeries } from "@/lib/ledger";
+import { formatDateEAT, byPeriod, startOfDayEAT, type TimePeriod } from "@/lib/utils";
+import {
+  buildSegments,
+  consumptionBetween,
+  dailySeries,
+  eatDateKey,
+  eatMonthStart,
+  eatWeekStart,
+  hourlyProfile,
+  monthComparison,
+  weeklyChanges,
+} from "@/lib/ledger";
 import ConsumptionChart from "@/components/ConsumptionChart";
 import StatCard from "@/components/StatCard";
 import VendorRates from "@/components/VendorRates";
@@ -14,7 +24,7 @@ type Tab = "daily" | "weekly" | "monthly";
 
 export default function Analytics() {
   const { lang } = useLang();
-  const { readings: rawReadings, changes, purchases, outages, stats } = useData();
+  const { readings: rawReadings, purchases, outages, stats } = useData();
   const [tab, setTab] = useState<Tab>("daily");
   const [periodView, setPeriodView] = useState<"today" | "all">("today");
   const [copying, setCopying] = useState(false);
@@ -27,35 +37,36 @@ export default function Analytics() {
   // top-up under-reported its consumption.
   const segments = buildSegments(readings, purchases, outages);
 
+  const now = new Date();
+  const WEEK = 7 * 86_400_000;
+
   const buildDailyData = () =>
-    dailySeries(segments, 30)
+    dailySeries(segments, 30, now)
       .filter((d) => d.units !== null)
       .map((d) => ({ label: d.date.slice(5), value: d.units as number }));
 
-  /** Roll segments up into buckets, crediting each to the bucket it ends in. */
-  const bucketed = (key: (d: Date) => string, keep: number) => {
-    const buckets = new Map<string, number>();
-    for (const seg of segments) {
-      const k = key(new Date(seg.to));
-      buckets.set(k, (buckets.get(k) ?? 0) + seg.consumption);
-    }
-    return [...buckets.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([label, value]) => ({
-        label,
-        value: Math.round(value * 10) / 10,
-      }))
-      .slice(-keep);
+  /** One bar per calendar window (EAT), prorated across its edges, so a
+   *  stretch spanning Sunday night lands in both weeks rather than one. */
+  const windowed = (starts: Date[], label: (d: Date) => string) =>
+    starts
+      .map((start, i) => {
+        const end = starts[i + 1] ?? now;
+        const w = consumptionBetween(segments, start, end);
+        return w.hasData ? { label: label(start), value: w.units } : null;
+      })
+      .filter((b): b is { label: string; value: number } => b !== null);
+
+  const buildWeeklyData = () => {
+    const thisWeek = eatWeekStart(now).getTime();
+    const starts = [7, 6, 5, 4, 3, 2, 1, 0].map((k) => new Date(thisWeek - k * WEEK));
+    return windowed(starts, (d) => eatDateKey(d).slice(5));
   };
 
-  const buildWeeklyData = () =>
-    bucketed((d) => getWeekStart(d).toISOString().slice(0, 10), 8).map((b) => ({
-      ...b,
-      label: b.label.slice(5),
-    }));
-
   const buildMonthlyData = () =>
-    bucketed((d) => d.toISOString().slice(0, 7), 6);
+    windowed(
+      [5, 4, 3, 2, 1, 0].map((k) => eatMonthStart(now, -k)),
+      (d) => eatDateKey(d).slice(0, 7)
+    );
 
   const PERIOD_ORDER: TimePeriod[] = ["alfajiri", "asubuhi", "mchana", "jioni", "usiku"];
   const PERIOD_COLORS: Record<TimePeriod, string> = {
@@ -66,59 +77,20 @@ export default function Analytics() {
     usiku: "bg-slate-500",
   };
 
-  const buildPeriodData = () => {
-    const totals: Record<TimePeriod, number> = {
-      alfajiri: 0, asubuhi: 0, mchana: 0, jioni: 0, usiku: 0,
-    };
-    // Credited to the period the stretch started in, and taken from the ledger
-    // so a top-up inside the stretch no longer erases it.
-    for (const seg of segments) {
-      totals[getTimePeriod(seg.from)] += seg.consumption;
-    }
-    return PERIOD_ORDER
-      .map((p) => ({ period: p, value: Math.round(totals[p] * 10) / 10 }))
+  // Both views split each stretch across the hours it really spans, so they
+  // agree with each other. They used to credit opposite ends of a stretch.
+  const toPeriodBars = (perHour: number[]) => {
+    const totals = byPeriod(perHour);
+    return PERIOD_ORDER.map((p) => ({ period: p, value: Math.round(totals[p] * 10) / 10 }))
       .filter(({ value }) => value > 0);
   };
 
-  const periodData = buildPeriodData();
+  const periodData = toPeriodBars(hourlyProfile(segments).units);
   const maxPeriodValue = Math.max(...periodData.map((d) => d.value), 1);
 
-  // --- Today's breakdown by time period ---
-  const todayStr = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-
-  const todayReadings = readings.filter((r) => {
-    const rDate = new Intl.DateTimeFormat("en-CA", {
-      timeZone: TZ,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(r.created_at));
-    return rDate === todayStr;
-  });
-
-  const todayPeriods: { period: TimePeriod; value: number }[] = [];
-  if (todayReadings.length >= 2) {
-    const totals: Record<TimePeriod, number> = {
-      alfajiri: 0, asubuhi: 0, mchana: 0, jioni: 0, usiku: 0,
-    };
-    for (let i = 1; i < todayReadings.length; i++) {
-      const prev = todayReadings[i - 1].reading;
-      const curr = todayReadings[i].reading;
-      if (curr < prev) {
-        const period = getTimePeriod(todayReadings[i].created_at);
-        totals[period] += prev - curr;
-      }
-    }
-    for (const p of PERIOD_ORDER) {
-      if (totals[p] > 0)
-        todayPeriods.push({ period: p, value: Math.round(totals[p] * 10) / 10 });
-    }
-  }
+  const todayPeriods = toPeriodBars(
+    hourlyProfile(segments, startOfDayEAT(now), now).units
+  );
   const maxTodayValue = Math.max(...todayPeriods.map((d) => d.value), 1);
 
   const chartData =
@@ -128,46 +100,26 @@ export default function Analytics() {
         ? buildWeeklyData()
         : buildMonthlyData();
 
-  const now = new Date();
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const thisMonthPurchases = purchases.filter((p) =>
-    p.created_at.startsWith(monthKey)
+  // --- Cost, this EAT month ---
+  const monthStart = eatMonthStart(now);
+  const thisMonthPurchases = purchases.filter(
+    (p) => new Date(p.created_at) >= monthStart
   );
   const totalSpent = thisMonthPurchases.reduce((s, p) => s + p.amount_tzs, 0);
   const totalUnits = thisMonthPurchases.reduce((s, p) => s + p.units, 0);
-  const daysElapsed = now.getDate();
-  const avgCostDay = daysElapsed > 0 ? totalSpent / daysElapsed : 0;
   const avgCostKwh = totalUnits > 0 ? totalSpent / totalUnits : 0;
+  // What the electricity you burn costs a day. Spend per calendar day measures
+  // when you happened to buy, not what you use.
+  const allUnits = purchases.reduce((s, p) => s + p.units, 0);
+  const allSpent = purchases.reduce((s, p) => s + p.amount_tzs, 0);
+  const useCostDay =
+    stats?.burnRate && allUnits > 0 ? stats.burnRate * (allSpent / allUnits) : 0;
 
-  const thisMonthReadings = readings.filter((r) =>
-    r.created_at.startsWith(monthKey)
-  );
-  let thisMonthConsumption = 0;
-  for (let i = 1; i < thisMonthReadings.length; i++) {
-    if (thisMonthReadings[i].reading < thisMonthReadings[i - 1].reading) {
-      thisMonthConsumption +=
-        thisMonthReadings[i - 1].reading - thisMonthReadings[i].reading;
-    }
-  }
+  const months = monthComparison(segments, now);
+  const monthDelta = months.deltaPct;
 
-  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastMonthKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`;
-  const lastMonthReadings = readings.filter((r) =>
-    r.created_at.startsWith(lastMonthKey)
-  );
-  let lastMonthConsumption = 0;
-  for (let i = 1; i < lastMonthReadings.length; i++) {
-    if (lastMonthReadings[i].reading < lastMonthReadings[i - 1].reading) {
-      lastMonthConsumption +=
-        lastMonthReadings[i - 1].reading - lastMonthReadings[i].reading;
-    }
-  }
-
-  const monthDelta =
-    lastMonthConsumption > 0
-      ? ((thisMonthConsumption - lastMonthConsumption) / lastMonthConsumption) *
-        100
-      : null;
+  const { changes, completeWeeks } = weeklyChanges(segments, now);
+  const hasEnoughWeeks = completeWeeks >= 5;
 
   const handleCopy = async () => {
     setCopying(true);
@@ -180,8 +132,6 @@ export default function Analytics() {
       setCopying(false);
     }
   };
-
-  const hasEnoughWeeks = readings.length > 0;
 
   return (
     <div className="space-y-4">
@@ -216,7 +166,7 @@ export default function Analytics() {
         </div>
       ) : (
         <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500">
-          {tr("nudge.noPrediction", lang)}
+          {tr("analytics.chartEmpty", lang)}
         </div>
       )}
 
@@ -350,7 +300,7 @@ export default function Analytics() {
         />
         <StatCard
           label={tr("analytics.avgDay", lang)}
-          value={avgCostDay > 0 ? Math.round(avgCostDay).toLocaleString() : "—"}
+          value={useCostDay > 0 ? Math.round(useCostDay).toLocaleString() : "—"}
           unit="TZS"
         />
         <StatCard
@@ -372,7 +322,13 @@ export default function Analytics() {
           <p
             className={`mt-1 text-lg font-bold ${monthDelta > 0 ? "text-red-500 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}
           >
-            {monthDelta > 0 ? "↑" : "↓"} {Math.abs(Math.round(monthDelta))}%
+            {monthDelta > 0 ? "↑" : "↓"} {Math.abs(monthDelta)}%
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+            {tr("analytics.perDayCompare", lang, {
+              now: months.thisPerDay ?? 0,
+              last: months.lastPerDay ?? 0,
+            })}
           </p>
         </div>
       )}
@@ -394,7 +350,7 @@ export default function Analytics() {
                 }`}
               >
                 {tr("common.weekOf", lang)}{" "}
-                {formatDateEAT(c.weekStart)}: {c.consumption.toFixed(1)} kWh —{" "}
+                {formatDateEAT(c.weekStart)}: {c.consumption.toFixed(1)} kWh,{" "}
                 {Math.abs(c.deviation)}% {tr(`common.${c.direction}`, lang)}{" "}
                 {tr("common.usual", lang)} {c.baseline} kWh/
                 {lang === "sw" ? "wiki" : "week"}

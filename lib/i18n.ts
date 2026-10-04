@@ -146,8 +146,9 @@ const t: Record<string, { sw: string; en: string }> = {
   "plan.iHaveTzs": { sw: "Nina TZS", en: "I have TZS" },
   "plan.iNeedDays": { sw: "Nahitaji siku", en: "I need days" },
   "plan.unitsYouGet": { sw: "Vitengo utavyopata", en: "Units you'll get" },
-  "plan.daysItLasts": { sw: "Vitadumu siku", en: "That lasts" },
-  "plan.unitsNeeded": { sw: "Vitengo unavyohitaji", en: "Units you need" },
+  "plan.daysItLasts": { sw: "Siku hadi viishe, pamoja na vilivyopo", en: "Days until empty, with what is on the meter" },
+  "plan.unitsNeeded": { sw: "Vitengo vya kununua, baada ya vilivyopo", en: "Units to buy, after what is on the meter" },
+  "plan.alreadyEnough": { sw: "Vitengo vilivyopo vinatosha siku hizo.", en: "What is on the meter already covers that." },
   "plan.estimatedCost": { sw: "Gharama takriban", en: "Estimated cost" },
   "plan.calcExplain": {
     sw: "Kulingana na wastani wako wa TZS {rate}/kWh na matumizi ya {burn} kWh/siku.",
@@ -216,7 +217,15 @@ const t: Record<string, { sw: string; en: string }> = {
   "analytics.monthly": { sw: "Kila Mwezi", en: "Monthly" },
   "analytics.cost": { sw: "Gharama", en: "Cost Summary" },
   "analytics.totalMonth": { sw: "Jumla mwezi huu", en: "Total this month" },
-  "analytics.avgDay": { sw: "Wastani/siku", en: "Avg/day" },
+  "analytics.avgDay": { sw: "Matumizi/siku", en: "Use/day" },
+  "analytics.perDayCompare": {
+    sw: "{now} kWh/siku mwezi huu, {last} kWh/siku mwezi uliopita",
+    en: "{now} kWh/day this month, {last} kWh/day last month",
+  },
+  "analytics.chartEmpty": {
+    sw: "Sajili usomaji angalau mara mbili kuona chati hii.",
+    en: "Log at least two readings to see this chart.",
+  },
   "analytics.avgKwh": { sw: "Wastani/kWh", en: "Avg/kWh" },
   "analytics.vsLastMonth": { sw: "vs mwezi uliopita", en: "vs last month" },
   "analytics.changes": { sw: "Mabadiliko ya Matumizi", en: "Usage Changes" },
@@ -308,8 +317,8 @@ const t: Record<string, { sw: string; en: string }> = {
   "analytics.byPeriod": { sw: "Matumizi kwa Wakati wa Siku", en: "Usage by Time of Day" },
   "analytics.outages": { sw: "Kukatika kwa Umeme", en: "Power Outages" },
   "analytics.periodNote": {
-    sw: "Kulingana na wakati usomaji uliporekodiwa",
-    en: "Based on when readings were logged",
+    sw: "Kila kipindi kati ya usomaji kimegawanywa kwa saa zake. Vipindi virefu kuliko siku moja havihesabiwi.",
+    en: "Each stretch between readings is split across the hours it spans. Stretches longer than a day are left out.",
   },
   "analytics.periodToday": { sw: "Leo", en: "Today" },
   "analytics.periodAll": { sw: "Jumla", en: "All Time" },
@@ -347,16 +356,11 @@ const t: Record<string, { sw: string; en: string }> = {
   },
   "dashboard.inUse": { sw: "Ununuzi unaotumika", en: "Purchase in use" },
   "dashboard.dayOf": { sw: "Siku {day} kati ya takriban {total}", en: "Day {day} of about {total}" },
-  "dashboard.queued": { sw: "Bado haijaanza kutumika", en: "Not in use yet" },
-  "dashboard.queuedExplain": {
-    sw: "Vitengo {units} vya awali vinatumika kwanza, ndipo hivi vianze.",
-    en: "The earlier {units} units burn first, then this purchase starts.",
-  },
   "dashboard.perDay": { sw: "TZS {tzs} kwa siku", en: "TZS {tzs} a day" },
   "dashboard.estimate": { sw: "makadirio", en: "estimate" },
   "dashboard.unitsLeftOfPurchase": {
-    sw: "Vitengo {units} vimebaki kwenye ununuzi huu",
-    en: "{units} units left from this purchase",
+    sw: "Vitengo {units} kwenye mita, pamoja na vilivyobaki awali",
+    en: "{units} units on the meter, leftover included",
   },
 
   "dashboard.lowBalanceShort": {
@@ -465,7 +469,6 @@ const t: Record<string, { sw: string; en: string }> = {
   // Purchase lifetimes in history
   "history.lastedDays": { sw: "Ilidumu siku {days}", en: "Lasted {days} days" },
   "history.stillRunning": { sw: "Inatumika sasa, siku {days}", en: "In use now, day {days}" },
-  "history.notStarted": { sw: "Bado haijaanza kutumika", en: "Not started yet" },
   "history.vendorLabel": { sw: "Muuzaji", en: "Vendor" },
 
   // Common

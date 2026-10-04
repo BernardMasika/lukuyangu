@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { startOfDayEAT } from "@/lib/utils";
 import {
   buildSegments,
-  burnRateFrom,
+  currentBurnRate,
   consumptionBetween,
+  eatMonthStart,
   purchaseLifetimes,
   detectMissingPurchases,
   detectSuspectedOutages,
@@ -38,17 +39,16 @@ export async function GET() {
   // --- Balance -------------------------------------------------------------
   const latest = readings.length > 0 ? readings[readings.length - 1] : null;
   const latestReading = latest ? latest.reading : null;
+  // A token entered after the last reading is already on the meter.
+  const pendingUnits = latest
+    ? purchases
+        .filter((p) => new Date(p.created_at) > new Date(latest.created_at))
+        .reduce((sum, p) => sum + p.units, 0)
+    : 0;
+  const balance = latestReading !== null ? latestReading + pendingUnits : null;
 
   // --- Burn rate -----------------------------------------------------------
-  // Prefer the last 30 days, fall back to everything when logging is sparse.
-  //
-  // The window must match on `from`, not `to`. After a break in logging the
-  // bridging segment ends inside the window but starts months earlier, and
-  // counting it spreads a few kWh over that whole span, which drags the rate
-  // to nearly zero and pushes "runs out" years into the future.
-  const cutoff = now.getTime() - 30 * DAY;
-  const recent = segments.filter((s) => new Date(s.from).getTime() >= cutoff);
-  const burn = burnRateFrom(recent) ?? burnRateFrom(segments);
+  const burn = currentBurnRate(segments, now);
   const burnRate = burn ? burn.rate : null;
 
   // --- Today ---------------------------------------------------------------
@@ -57,41 +57,39 @@ export async function GET() {
   const today = consumptionBetween(segments, dayStart, now);
   const todayUsage = today.hasData ? today.units : null;
 
-  // --- Last 7 days ---------------------------------------------------------
-  const weekStart = new Date(now.getTime() - 7 * DAY);
-  const week = consumptionBetween(segments, weekStart, now);
-  const weekSegments = segments.filter(
-    (s) => new Date(s.from).getTime() >= weekStart.getTime()
-  );
-  const weekActiveDays =
-    weekSegments.reduce((sum, s) => sum + s.activeHours, 0) / 24;
-  // Two hours of logging is not a weekly average. Dividing by a sliver of a day
-  // turns a normal evening into "60 kWh/day", so below a full day it says
-  // nothing rather than something alarming and wrong.
-  const avg7 =
-    week.hasData && weekActiveDays >= 1 ? week.units / weekActiveDays : null;
+  // --- Last 7 days, and the 7 before for a trend ---------------------------
+  // Units and active days come from the same prorated window. Below a full day
+  // of data it says nothing: an evening is not a weekly average.
+  const avgOver = (from: number, to: number, minDays: number) => {
+    const w = consumptionBetween(segments, new Date(from), new Date(to));
+    return w.activeDays >= minDays ? w.units / w.activeDays : null;
+  };
+  const avg7 = avgOver(now.getTime() - 7 * DAY, now.getTime(), 1);
+  const prev7 = avgOver(now.getTime() - 14 * DAY, now.getTime() - 7 * DAY, 2);
+  const trendPct =
+    avg7 !== null && prev7 !== null && prev7 > 0
+      ? Math.round(((avg7 - prev7) / prev7) * 100)
+      : null;
 
   // --- Prediction ----------------------------------------------------------
+  // Projected from the last reading, not from now: stop logging for three days
+  // and the meter has still been burning for three days.
   let daysRemaining: number | null = null;
   let runsOutAt: string | null = null;
-  if (burnRate !== null && burnRate > 0 && latestReading !== null && latestReading > 0) {
-    daysRemaining = latestReading / burnRate;
-    runsOutAt = new Date(now.getTime() + daysRemaining * DAY).toISOString();
+  if (burnRate !== null && burnRate > 0 && latest && balance !== null && balance > 0) {
+    const runsOutMs = new Date(latest.created_at).getTime() + (balance / burnRate) * DAY;
+    runsOutAt = new Date(runsOutMs).toISOString();
+    daysRemaining = Math.max(0, (runsOutMs - now.getTime()) / DAY);
   }
+  // What the meter most likely shows right now.
+  const projectedBalance =
+    daysRemaining !== null && burnRate !== null ? daysRemaining * burnRate : balance;
 
   // --- Purchase lifetimes (top-up model) ----------------------------------
-  const openingBalance = readings.length > 0 ? readings[0].reading : 0;
-  const lifetimes = purchaseLifetimes(segments, purchases, openingBalance, now);
-
-  // The purchase in use is the latest one, unless the meter has since run dry.
-  const inUse = lifetimes.find((l) => l.started && l.running) ?? null;
-  const queued = inUse
-    ? null
-    : lifetimes.filter((l) => !l.started).slice(-1)[0] ?? null;
+  const lifetimes = purchaseLifetimes(segments, purchases, 0, now);
+  const currentPurchase = lifetimes.find((l) => l.running) ?? null;
   const lastFinished =
     [...lifetimes].reverse().find((l) => l.exhaustedAt !== null) ?? null;
-
-  const currentPurchase = inUse ?? queued;
   const estimatedTotalDays =
     currentPurchase && burnRate !== null && burnRate > 0
       ? // Days so far plus what the merged balance still buys, since a top-up
@@ -101,33 +99,22 @@ export async function GET() {
         ) / 10
       : null;
 
-  // --- Spending ------------------------------------------------------------
-  const spentResult = await db.execute({
-    sql: "SELECT COALESCE(SUM(amount_tzs), 0) as total FROM purchases WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')",
-    args: [],
-  });
-  const spentThisMonth = Number(
-    (spentResult.rows[0] as unknown as { total: number }).total
-  );
+  // --- Spending, this EAT month (SQL 'now' is UTC) -------------------------
+  const monthStart = eatMonthStart(now);
+  const spentThisMonth = purchases
+    .filter((p) => new Date(p.created_at) >= monthStart)
+    .reduce((sum, p) => sum + p.amount_tzs, 0);
 
-  // --- Outages -------------------------------------------------------------
-  const monthKey = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Dar_es_Salaam",
-    year: "numeric",
-    month: "2-digit",
-  }).format(now);
-
+  // --- Outages overlapping this EAT month, the ongoing one included --------
   let outageHoursThisMonth = 0;
   let outageCount = 0;
   let activeOutage = false;
   for (const o of outages) {
-    if (!o.end_at) {
-      activeOutage = true;
-      continue;
-    }
-    if (!o.start_at.startsWith(monthKey.slice(0, 7))) continue;
-    outageHoursThisMonth +=
-      (new Date(o.end_at).getTime() - new Date(o.start_at).getTime()) / 3_600_000;
+    if (!o.end_at) activeOutage = true;
+    const start = Math.max(new Date(o.start_at).getTime(), monthStart.getTime());
+    const end = o.end_at ? new Date(o.end_at).getTime() : now.getTime();
+    if (end <= start) continue;
+    outageHoursThisMonth += (end - start) / 3_600_000;
     outageCount++;
   }
 
@@ -151,6 +138,9 @@ export async function GET() {
     avg7: round(avg7),
     burnRate: round(burnRate),
     burnRateDays: burn ? burn.activeDays : null,
+    trendPct,
+    balance: round(balance),
+    projectedBalance: round(projectedBalance),
     daysRemaining: round(daysRemaining),
     runsOutAt,
     spentThisMonth: Math.round(spentThisMonth),

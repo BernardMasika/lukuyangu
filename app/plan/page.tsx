@@ -40,48 +40,30 @@ export default function Plan() {
   const readings = [...rawReadings].reverse(); // chronological
   const hasBurnRate = stats?.burnRate !== null && stats?.burnRate !== undefined;
   const burnRate = stats?.burnRate ?? 0;
-  const latestReading = stats?.latestReading ?? 0;
+  // Last reading plus any token entered since: what the projection runs from.
+  const balance = stats?.balance ?? 0;
+  // What the meter most likely shows now, for the calculator.
+  const onMeter = stats?.projectedBalance ?? 0;
   const daysRemaining = stats?.daysRemaining ?? null;
   const readingCount = stats?.readingCount ?? 0;
+  const msPerDay = 86400000;
 
   // --- Avg cost per kWh from all purchases ---
   const totalSpent = purchases.reduce((s, p) => s + p.amount_tzs, 0);
   const totalUnits = purchases.reduce((s, p) => s + p.units, 0);
   const avgCostKwh = totalUnits > 0 ? totalSpent / totalUnits : 0;
 
-  // --- Trend: compare last 7 days vs previous 7 days ---
-  const now = Date.now();
-  const msPerDay = 86400000;
-  const last7 = readings.filter(
-    (r) => now - new Date(r.created_at).getTime() < 7 * msPerDay
-  );
-  const prev7 = readings.filter((r) => {
-    const age = now - new Date(r.created_at).getTime();
-    return age >= 7 * msPerDay && age < 14 * msPerDay;
-  });
-
-  const calcPeriodConsumption = (
-    rs: { reading: number; created_at: string }[]
-  ) => {
-    let total = 0;
-    for (let i = 1; i < rs.length; i++) {
-      if (rs[i].reading < rs[i - 1].reading)
-        total += rs[i - 1].reading - rs[i].reading;
-    }
-    return total;
-  };
-
-  const last7Consumption = calcPeriodConsumption(last7);
-  const prev7Consumption = calcPeriodConsumption(prev7);
-
-  let trendKey: string | null = null;
-  if (last7.length >= 2 && prev7.length >= 2) {
-    const diff = last7Consumption - prev7Consumption;
-    const threshold = prev7Consumption * 0.1;
-    if (diff > threshold) trendKey = "plan.trendUp";
-    else if (diff < -threshold) trendKey = "plan.trendDown";
-    else trendKey = "plan.trendSteady";
-  }
+  // --- Trend: last 7 days against the 7 before, per active day (from stats,
+  // where both windows come from the ledger so a top-up cannot hide usage) ---
+  const trendPct = stats?.trendPct ?? null;
+  const trendKey =
+    trendPct === null
+      ? null
+      : trendPct > 10
+        ? "plan.trendUp"
+        : trendPct < -10
+          ? "plan.trendDown"
+          : "plan.trendSteady";
 
   // --- Reading span in days ---
   const readingSpanDays =
@@ -91,13 +73,12 @@ export default function Plan() {
         msPerDay
       : 0;
 
-  // --- Depletion date ---
-  const depletionDate =
-    daysRemaining !== null
-      ? new Date(Date.now() + daysRemaining * msPerDay)
-      : null;
+  // --- Depletion date, projected from the last reading ---
+  const depletionDate = stats?.runsOutAt ? new Date(stats.runsOutAt) : null;
 
   // --- Calculator ---
+  // Whatever is on the meter already counts: buying for "30 days" with 25
+  // units loaded only needs 30 days minus those 25 units.
   const calcValue = parseFloat(calcInput) || 0;
   let calcUnits = 0;
   let calcDays = 0;
@@ -106,9 +87,9 @@ export default function Plan() {
 
   if (calcMode === "budget" && avgCostKwh > 0 && burnRate > 0) {
     calcUnits = calcValue / avgCostKwh;
-    calcDays = calcUnits / burnRate;
+    calcDays = (onMeter + calcUnits) / burnRate;
   } else if (calcMode === "days" && burnRate > 0) {
-    calcNeededUnits = calcValue * burnRate;
+    calcNeededUnits = Math.max(0, calcValue * burnRate - onMeter);
     calcCost = avgCostKwh > 0 ? calcNeededUnits * avgCostKwh : 0;
   }
 
@@ -128,13 +109,11 @@ export default function Plan() {
       tips.push(tr("plan.tipLogMore", lang));
     }
   }
-  if (
-    stats?.outageCount === 0 &&
-    readingSpanDays > 14
-  ) {
+  // Any outage ever logged counts, not just this month's.
+  if (outages.length === 0 && readingSpanDays > 14) {
     tips.push(tr("plan.tipLogOutages", lang));
   }
-  if (stats && stats.outageCount > 0) {
+  if (outages.length > 0) {
     tips.push(tr("plan.tipGenerator", lang));
     tips.push(tr("plan.tipGeneratorReminder", lang));
   }
@@ -191,7 +170,7 @@ export default function Plan() {
 
       {/* Section 2: How Long Will My Units Last? */}
       <SectionCard title={tr("plan.howLong", lang)}>
-        {hasBurnRate && daysRemaining !== null && latestReading > 0 ? (
+        {hasBurnRate && daysRemaining !== null && balance > 0 ? (
           <>
             <div className="flex items-baseline gap-3">
               <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
@@ -199,7 +178,7 @@ export default function Plan() {
                 <span className="text-base font-normal">{tr("plan.daysLabel", lang)}</span>
               </p>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                ({latestReading} kWh {tr("dashboard.units", lang) === "vitengo" ? "vilivyobaki" : "remaining"})
+                ({balance} kWh {tr("dashboard.units", lang) === "vitengo" ? "vilivyobaki" : "remaining"})
               </p>
             </div>
             {depletionDate && (
@@ -210,7 +189,7 @@ export default function Plan() {
             <Explainer
               text={tr("plan.howLongExplain", lang, {
                 rate: burnRate,
-                units: latestReading,
+                units: balance,
                 date: depletionDate ? formatDateEAT(depletionDate.toISOString()) : "—",
               })}
             />
@@ -291,6 +270,11 @@ export default function Plan() {
                           {Math.round(calcNeededUnits * 10) / 10} kWh
                         </span>
                       </div>
+                      {calcNeededUnits === 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                          {tr("plan.alreadyEnough", lang)}
+                        </p>
+                      )}
                       {calcCost > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-zinc-500 dark:text-zinc-400">

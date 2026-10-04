@@ -123,46 +123,25 @@ export default function Dashboard() {
             )}
           </p>
 
-          {current.started ? (
-            <>
-              <p className="mt-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                {/* "Day 164 of about 2" helps nobody. Once the purchase has
-                    outlived its estimate the estimate is the wrong number to
-                    show, so drop it and just count the days. */}
-                {current.estimatedTotalDays &&
-                current.days <= current.estimatedTotalDays * 1.5
-                  ? tr("dashboard.dayOf", lang, {
-                      day: Math.max(1, Math.round(current.days)),
-                      total: Math.round(current.estimatedTotalDays),
-                    })
-                  : tr("dashboard.lasting", lang, {
-                      days: Math.max(1, Math.round(current.days)),
-                    })}
-              </p>
-              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                {tr("dashboard.unitsLeftOfPurchase", lang, {
-                  units: current.unitsRemaining,
+          <p className="mt-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            {/* "Day 164 of about 2" helps nobody. Once the purchase has
+                outlived its estimate the estimate is the wrong number to
+                show, so drop it and just count the days. */}
+            {current.estimatedTotalDays &&
+            current.days <= current.estimatedTotalDays * 1.5
+              ? tr("dashboard.dayOf", lang, {
+                  day: Math.max(1, Math.round(current.days)),
+                  total: Math.round(current.estimatedTotalDays),
+                })
+              : tr("dashboard.lasting", lang, {
+                  days: Math.max(1, Math.round(current.days)),
                 })}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">
-                {tr("dashboard.queued", lang)}
-              </p>
-              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                {tr("dashboard.queuedExplain", lang, {
-                  units:
-                    stats?.latestReading !== null &&
-                    stats?.latestReading !== undefined
-                      ? Math.round(
-                          (stats.latestReading - current.unitsRemaining) * 10
-                        ) / 10
-                      : 0,
-                })}
-              </p>
-            </>
-          )}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+            {tr("dashboard.unitsLeftOfPurchase", lang, {
+              units: current.unitsRemaining,
+            })}
+          </p>
         </div>
       )}
 

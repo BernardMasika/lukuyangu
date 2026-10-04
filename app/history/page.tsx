@@ -367,13 +367,6 @@ export default function History() {
                       const life = lifetimes.find((l) => l.purchaseId === p.id);
                       if (!life) return null;
 
-                      if (!life.started) {
-                        return (
-                          <p className="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
-                            {tr("history.notStarted", lang)}
-                          </p>
-                        );
-                      }
                       if (life.running) {
                         return (
                           <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">

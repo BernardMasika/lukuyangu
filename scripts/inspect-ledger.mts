@@ -11,7 +11,7 @@
 import { createClient } from "@libsql/client";
 import {
   buildSegments,
-  burnRateFrom,
+  currentBurnRate,
   consumptionBetween,
   purchaseLifetimes,
   detectMissingPurchases,
@@ -71,7 +71,7 @@ for (const s of segments) {
   );
 }
 
-const burn = burnRateFrom(segments);
+const burn = currentBurnRate(segments);
 console.log("\nBURN RATE");
 console.log("-".repeat(96));
 console.log(
@@ -80,26 +80,19 @@ console.log(
     : "not enough data (needs 3 readings across 3 days)"
 );
 
-const openingBalance = readings.length > 0 ? readings[0].reading : 0;
-const lifetimes = purchaseLifetimes(segments, purchases, openingBalance);
+const lifetimes = purchaseLifetimes(segments, purchases, 0);
 
-console.log("\nPURCHASE LIFETIMES  (FIFO: old units burn first)");
+console.log("\nPURCHASE LIFETIMES  (top-up to top-up: the meter merges balances)");
 console.log("-".repeat(96));
 for (const l of lifetimes) {
-  if (!l.started) {
-    console.log(
-      `#${l.purchaseId}  ${l.units} kWh @ TZS ${l.tzsPerUnit}/unit  ` +
-        `QUEUED, not started after ${l.idleDaysBeforeStart}d, ${l.unitsRemaining} kWh still unburned`
-    );
-    continue;
-  }
   const ended = l.exhaustedAt
     ? `ran out ${fmt(l.exhaustedAt)}${l.exhaustedEstimated ? " (estimated)" : ""}`
-    : `running, ${l.unitsRemaining} kWh left`;
+    : l.running
+      ? `running, ${l.unitsRemaining} kWh on the meter`
+      : "topped up";
   console.log(
     `#${l.purchaseId}  ${l.units} kWh @ TZS ${l.tzsPerUnit}/unit  ` +
-      `started ${fmt(l.startedAt)}  ${ended}  lasted ${l.days}d` +
-      (l.idleDaysBeforeStart > 0 ? `  (sat ${l.idleDaysBeforeStart}d first)` : "")
+      `from ${fmt(l.startedAt)}  ${ended}  ${l.running ? "so far" : "lasted"} ${l.days}d`
   );
 }
 
