@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useLang, useData } from "@/components/Providers";
 import { tr } from "@/lib/i18n";
 import { formatDateEAT, byPeriod, startOfDayEAT, type TimePeriod } from "@/lib/utils";
@@ -312,6 +313,13 @@ export default function Analytics() {
 
       {/* What each channel actually charges per unit */}
       <VendorRates />
+
+      <Link
+        href="/investigate"
+        className="block rounded-xl border border-zinc-200 bg-white p-4 text-sm font-medium text-[#003399] hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-blue-400 dark:hover:bg-zinc-800"
+      >
+        {tr("analytics.boardLink", lang)}
+      </Link>
 
       {/* Month comparison */}
       {monthDelta !== null && (

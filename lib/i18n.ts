@@ -477,6 +477,14 @@ const t: Record<string, { sw: string; en: string }> = {
   "cause.guests": { sw: "Wageni", en: "Guests" },
   "cause.unknown": { sw: "Haijulikani", en: "Unknown" },
   "cause.falseAlarm": { sw: "Sio tatizo", en: "False alarm" },
+  "detect.spikeTitle": { sw: "Mpando wa matumizi umewekwa alama", en: "New usage spike pinned" },
+  "detect.spikeBody": {
+    sw: "{from} hadi {to} ilikuwa mara {ratio} ya kawaida, +{kwh} kWh.",
+    en: "{from} to {to} ran {ratio}× your normal rate, +{kwh} kWh.",
+  },
+  "detect.spikeMore": { sw: "na mingine {count}", en: "and {count} more" },
+  "detect.spikeAction": { sw: "Fungua ubao", en: "Open board" },
+  "analytics.boardLink": { sw: "Ubao wa uchunguzi →", en: "Investigation board →" },
   "detect.title": { sw: "Vitu vya kuangalia", en: "Worth a look" },
 
   // AI insight

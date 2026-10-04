@@ -102,12 +102,16 @@ export default function Detections() {
   const ends = stats.outageEnds.filter(
     (e) => !dismissed.includes(`outageEnd:${e.outageId}:${e.estimatedEnd}`)
   );
+  const spikes = (stats.newSpikes ?? []).filter(
+    (s) => !dismissed.includes(`spike:${s.from}:${s.to}`)
+  );
 
   if (
     outages.length === 0 &&
     missing.length === 0 &&
     gaps.length === 0 &&
-    ends.length === 0
+    ends.length === 0 &&
+    spikes.length === 0
   ) {
     return null;
   }
@@ -155,6 +159,38 @@ export default function Detections() {
       <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
         {tr("detect.title", lang)}
       </p>
+
+      {/* Newest spike only: the board holds the rest. */}
+      {spikes.length > 0 &&
+        (() => {
+          const s = spikes[spikes.length - 1];
+          const key = `spike:${s.from}:${s.to}`;
+          return (
+            <Card
+              key={key}
+              tone="orange"
+              title={tr("detect.spikeTitle", lang)}
+              body={
+                tr("detect.spikeBody", lang, {
+                  from: formatDateTimeEAT(s.from),
+                  to: formatDateTimeEAT(s.to),
+                  ratio: s.ratio,
+                  kwh: s.extraKwh,
+                }) +
+                (spikes.length > 1
+                  ? " " + tr("detect.spikeMore", lang, { count: spikes.length - 1 })
+                  : "")
+              }
+            >
+              <Link href="/investigate" className={actionClass}>
+                {tr("detect.spikeAction", lang)}
+              </Link>
+              <button onClick={() => dismiss(key)} className={quietClass}>
+                {tr("detect.dismiss", lang)}
+              </button>
+            </Card>
+          );
+        })()}
 
       {outages.map((o) => {
         const key = `outage:${o.from}:${o.to}`;

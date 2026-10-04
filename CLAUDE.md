@@ -36,6 +36,7 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
   - `readings/` + `[id]/` — CRUD for meter readings
   - `purchases/` + `[id]/` — CRUD for token purchases
   - `outages/` + `[id]/` — CRUD for power outages (TANESCO cuts)
+  - `investigations/` + `[id]/` — Investigation board: GET merged board (spikes + saved notes + 30-day strip), PUT upsert by (seg_from, seg_to), DELETE
   - `stats/` — All computed stats, derived from `lib/ledger.ts` in one pass
   - `insight/` — Claude-backed analysis (GET reads cache, POST regenerates)
   - `summary/` — AI clipboard text generator (sw/en)
@@ -52,11 +53,13 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
     too, using a fixed UTC+3 offset (Tanzania has no DST). Deliberately has
     **no imports** so `node --test` can type-strip it directly.
     Any new consumption question belongs here, not in a page.
+  - `investigation.ts` — Board merging (`mergeBoard`), PUT validation, cause tags. Type-only imports so `node --test` runs it.
   - `db.ts` — Turso client singleton (lazy init to avoid build-time errors). Use `db` import for queries, `initDb()` for table creation. The Proxy requires `.bind(getDb())` for methods due to libSQL private fields.
   - `i18n.ts` — Flat `{ key: { sw, en } }` translation map, `tr()` helper with variable interpolation
   - `utils.ts` — Display and date helpers only: EAT formatting, Swahili time-of-day periods (`getTimePeriod()`, `periodOfHour()`, `byPeriod()`), `isoToDatetimeLocal()`, `datetimeLocalToISO()`, `startOfDayEAT()`. No consumption maths: that is all in the ledger.
 - `components/` — Shared UI:
   - `Detections.tsx` — One-tap questions raised by the ledger, dismissals in localStorage
+  - `PinCard.tsx` — One investigation pin: evidence, notes, cause chips, solve/reopen/clear
   - `AiInsight.tsx` — Claude analysis card (Analytics page), inert without an API key
   - `VendorRates.tsx` — TZS per unit by vendor, names the cheapest channel
   - `Providers.tsx` — React Context for theme, language, PWA install prompt state, and data cache (stats, readings, purchases, changes, outages)
@@ -72,11 +75,12 @@ Personal prepaid electricity (LUKU) consumption tracker for households in Dar es
 
 ## Database Schema (Turso/SQLite)
 
-Four tables, created by `initDb()` in `lib/db.ts`:
+Five tables, created by `initDb()` in `lib/db.ts`:
 - **readings** — `id` INTEGER PK, `reading` REAL, `note` TEXT, `created_at` TEXT (ISO 8601)
 - **purchases** — `id` INTEGER PK, `units` REAL, `amount_tzs` REAL, `note` TEXT, `vendor` TEXT, `created_at` TEXT
 - **outages** — `id` INTEGER PK, `start_at` TEXT (ISO 8601), `end_at` TEXT (nullable — NULL = ongoing), `note` TEXT, `created_at` TEXT
 - **settings** — `key` TEXT PK, `value` TEXT (key-value store for currency, meter_no, etc.)
+- **investigations** — `id` INTEGER PK, `seg_from`/`seg_to` TEXT (UNIQUE pair, the segment's reading timestamps), `status` ('open'|'solved'), `causes` JSON TEXT, `notes` TEXT, `snapshot` JSON TEXT (evidence at first save), `created_at`, `updated_at`. Rows are created lazily on first save.
 
 ## Key Domain Logic
 
@@ -95,6 +99,7 @@ Four tables, created by `initDb()` in `lib/db.ts`:
   than 14 days, since a bridge across a logging break is not a daily rate.
 - Detections are **questions, never assertions**: a meter that barely moved looks
   identical whether the power was cut or nobody was home.
+- Spikes (`detectSpikes()`): a segment at >= 2× the burn rate, >= 0.5 kWh above it, >= 1 powered hour, <= 2 days long. Evidence only; the user names the cause. Starter causes are only appliances the user named (fridge, multicooker, PC) plus guests/unknown/false alarm.
 - All timestamps in EAT (Africa/Dar_es_Salaam, UTC+3), stored as ISO 8601 TEXT in SQLite.
 - Burn rate needs 3+ readings over 3+ days before showing predictions. Outage hours are subtracted from elapsed time for accuracy.
 - Swahili time-of-day periods: Alfajiri (04-05), Asubuhi (06-11), Mchana (12-15), Jioni (16-18), Usiku (19-03). Shown as badges on readings/purchases and as analytics breakdown.
@@ -113,6 +118,7 @@ Four tables, created by `initDb()` in `lib/db.ts`:
 - **Analytics** (`/analytics`) — Historical analysis: daily/weekly/monthly charts, time-of-day breakdown (Today/All Time toggle), cost summary, month comparison, change detection, outage stats, AI summary export
 - **Plan** (`/plan`) — Future-focused: daily usage rate with trend, depletion prediction with calendar date, purchase calculator (budget-to-days or days-to-cost), contextual tips (logging advice, generator awareness)
 - **Settings** (`/settings`) — Meter number, language, theme, export, install app, daily reminder
+- **Investigate** (`/investigate`) — Not a nav tab; linked from the Dashboard spike card and Analytics. 30-day rate strip with numbered pins, open/solved pin cards with notes and causes.
 
 ## i18n Style
 
