@@ -52,6 +52,21 @@ export async function initDb() {
       value TEXT NOT NULL
     );
 
+    -- One row per spike the user has written about. Untouched spikes have no
+    -- row; they live only in the ledger's output.
+    CREATE TABLE IF NOT EXISTS investigations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      seg_from TEXT NOT NULL,
+      seg_to TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      causes TEXT NOT NULL DEFAULT '[]',
+      notes TEXT NOT NULL DEFAULT '',
+      snapshot TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (seg_from, seg_to)
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('currency', 'TZS');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('meter_no', '');
   `);

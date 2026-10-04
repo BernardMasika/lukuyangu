@@ -112,6 +112,7 @@ interface Stats {
     estimatedEnd: string;
     unitsAfter: number;
   }[];
+  newSpikes: { from: string; to: string; ratio: number; extraKwh: number }[];
 }
 
 interface Reading {

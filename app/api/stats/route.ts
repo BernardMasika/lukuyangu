@@ -11,6 +11,7 @@ import {
   detectSuspectedOutages,
   detectLoggingGaps,
   estimateOutageEnds,
+  detectSpikes,
   type ReadingRow,
   type PurchaseRow,
   type OutageRow,
@@ -23,10 +24,11 @@ const DAY = 86_400_000;
 export async function GET() {
   // One pass over the whole history. Everything below is derived from the same
   // ledger, so the dashboard, the plan page and analytics cannot disagree.
-  const [readingsResult, purchasesResult, outagesResult] = await Promise.all([
+  const [readingsResult, purchasesResult, outagesResult, investigationsResult] = await Promise.all([
     db.execute({ sql: "SELECT * FROM readings ORDER BY created_at ASC", args: [] }),
     db.execute({ sql: "SELECT * FROM purchases ORDER BY created_at ASC", args: [] }),
     db.execute({ sql: "SELECT id, start_at, end_at FROM outages", args: [] }),
+    db.execute({ sql: "SELECT seg_from, seg_to FROM investigations", args: [] }),
   ]);
 
   const readings = readingsResult.rows as unknown as ReadingRow[];
@@ -125,6 +127,19 @@ export async function GET() {
   const loggingGaps = detectLoggingGaps(segments, lifetimes).slice(-3);
   const outageEnds =
     burnRate !== null ? estimateOutageEnds(segments, outages, burnRate).slice(-3) : [];
+  // Spikes the user has not written anything on yet: the Dashboard's prompt
+  // to open the investigation board.
+  const investigated = new Set(
+    (investigationsResult.rows as unknown as { seg_from: string; seg_to: string }[]).map(
+      (r) => `${r.seg_from}|${r.seg_to}`
+    )
+  );
+  const newSpikes =
+    burnRate !== null
+      ? detectSpikes(segments, burnRate)
+          .filter((s) => !investigated.has(`${s.from}|${s.to}`))
+          .map(({ from, to, ratio, extraKwh }) => ({ from, to, ratio, extraKwh }))
+      : [];
 
   const round = (n: number | null) =>
     n !== null ? Math.round(n * 10) / 10 : null;
@@ -164,5 +179,6 @@ export async function GET() {
     suspectedOutages,
     loggingGaps,
     outageEnds,
+    newSpikes,
   });
 }
