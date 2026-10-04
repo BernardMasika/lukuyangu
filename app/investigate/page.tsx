@@ -147,11 +147,11 @@ function Strip({ board, lang }: { board: Board; lang: Lang }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div
-        role="img"
+        role="group"
         aria-label={tr("investigate.stripLabel", lang, { count: pinAt.size })}
         className="relative h-28 w-full"
       >
-        <div className="absolute inset-x-0 bottom-0 top-6 flex items-end gap-px">
+        <div className="absolute inset-x-0 bottom-0 top-7 flex items-end gap-px">
           {board.strip.map((s) => {
             const gap = s.hours > 24;
             const n = pinAt.get(`${s.from}|${s.to}`);
@@ -184,8 +184,8 @@ function Strip({ board, lang }: { board: Board; lang: Lang }) {
                   <button
                     type="button"
                     onClick={() => jump(n)}
-                    aria-label={`${n}`}
-                    className="absolute -top-6 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white"
+                    aria-label={tr("investigate.jumpTo", lang, { n })}
+                    className="absolute -top-7 left-1/2 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full bg-orange-700 text-[11px] font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                   >
                     {n}
                   </button>
@@ -200,9 +200,9 @@ function Strip({ board, lang }: { board: Board; lang: Lang }) {
           />
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap justify-between gap-x-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <div className="mt-2 flex flex-wrap justify-between gap-x-3 text-[11px] text-zinc-500 dark:text-zinc-400">
         <span>{formatDateEAT(board.strip[0].from)}</span>
-        <span className="text-emerald-600 dark:text-emerald-400">
+        <span className="text-emerald-700 dark:text-emerald-400">
           - - {tr("investigate.normal", lang, { baseline })}
         </span>
         <span>{formatDateEAT(board.strip[board.strip.length - 1].to)}</span>

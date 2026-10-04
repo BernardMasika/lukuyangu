@@ -446,8 +446,9 @@ const t: Record<string, { sw: string; en: string }> = {
   "investigate.notLogged": { sw: "haijasajiliwa", en: "not logged" },
   "investigate.stripLabel": {
     sw: "Kiwango cha matumizi siku 30 zilizopita, alama {count}",
-    en: "Usage rate over the last 30 days, {count} pins",
+    en: "Usage rate over the last 30 days, pins: {count}",
   },
+  "investigate.jumpTo": { sw: "Nenda kwenye alama {n}", en: "Go to pin {n}" },
   "investigate.loadFailed": { sw: "Imeshindwa kupakia ubao.", en: "Could not load the board." },
   "pin.ratio": { sw: "mara {ratio} ya kawaida", en: "{ratio}× normal" },
   "pin.extra": { sw: "+{kwh} kWh zaidi ya kawaida, takriban TZS {tzs}", en: "+{kwh} kWh above normal, about TZS {tzs}" },

@@ -8,7 +8,7 @@ import { formatDateTimeEAT, getTimePeriod } from "@/lib/utils";
 import { MAX_NOTES, STARTER_CAUSES, type Pin, type Status } from "@/lib/investigation";
 
 const chip =
-  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors";
+  "rounded-full border px-2.5 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
 const chipOn = "border-[#003399] bg-[#003399] text-white";
 const chipOff =
   "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
@@ -108,7 +108,7 @@ export default function PinCard({
     >
       {/* Evidence */}
       <div className="flex items-start gap-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-500 text-sm font-bold text-white">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-700 text-sm font-bold text-white">
           {pin.number}
         </span>
         <div className="min-w-0 flex-1">
@@ -143,7 +143,7 @@ export default function PinCard({
         <div className="mt-3 space-y-0.5 text-sm">
           <p className="font-medium text-zinc-800 dark:text-zinc-100">
             {e.rate} kWh/{lang === "sw" ? "siku" : "day"} ·{" "}
-            <span className="text-orange-600 dark:text-orange-400">
+            <span className="text-orange-700 dark:text-orange-400">
               {tr("pin.ratio", lang, { ratio: e.ratio })}
             </span>
           </p>
@@ -174,7 +174,7 @@ export default function PinCard({
           maxLength={MAX_NOTES}
           rows={3}
           placeholder={tr("pin.notesPlaceholder", lang)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-[#003399] focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
+          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-[#003399] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
         />
       </label>
 
@@ -202,7 +202,7 @@ export default function PinCard({
           maxLength={40}
           placeholder={tr("pin.tagPlaceholder", lang)}
           aria-label={tr("pin.addTag", lang)}
-          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-900 focus:border-[#003399] focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
+          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-900 focus:border-[#003399] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
         />
         <button type="button" onClick={addTag} className={`${chip} ${chipOff}`}>
           {tr("pin.add", lang)}
@@ -214,7 +214,7 @@ export default function PinCard({
           type="button"
           disabled={busy}
           onClick={() => save(status)}
-          className="rounded-md bg-[#003399] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#002277] disabled:opacity-50"
+          className="rounded-md bg-[#003399] px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 text-xs font-medium text-white hover:bg-[#002277] disabled:opacity-50"
         >
           {tr("pin.save", lang)}
         </button>
@@ -224,7 +224,7 @@ export default function PinCard({
             disabled={busy || causes.length === 0}
             title={causes.length === 0 ? tr("pin.needCause", lang) : undefined}
             onClick={() => save("solved")}
-            className="rounded-md border border-emerald-600 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+            className="rounded-md border border-emerald-600 px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
           >
             {tr("pin.markSolved", lang)}
           </button>
@@ -233,7 +233,7 @@ export default function PinCard({
             type="button"
             disabled={busy}
             onClick={() => save("open")}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="rounded-md border border-zinc-300 px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             {tr("pin.reopen", lang)}
           </button>
@@ -243,10 +243,15 @@ export default function PinCard({
             type="button"
             disabled={busy}
             onClick={() => setConfirmClear(true)}
-            className="ml-auto rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+            className="ml-auto rounded px-2 py-2 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
           >
             {tr("pin.clear", lang)}
           </button>
+        )}
+        {status === "open" && causes.length === 0 && (
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {tr("pin.needCause", lang)}
+          </span>
         )}
         <span role="status" className="text-xs">
           {message === "saved" && (
