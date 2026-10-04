@@ -7,7 +7,9 @@ import {
   normalizeCauses,
   parseRow,
   customTags,
+  isReadingPair,
   MAX_NOTES,
+  MAX_CAUSES,
   type InvestigationRow,
 } from "./investigation.ts";
 
@@ -197,4 +199,26 @@ test("a snapshot keeps only Spike fields of the right type, or nothing", () => {
   // The same check guards rows already in the database.
   const stored = parseRow({ ...row({}), causes: "[]", snapshot: JSON.stringify(crafted) });
   assert.equal(stored.snapshot, null);
+});
+
+test("the causes cap applies to what was sent, before any clean-up work", () => {
+  // A million copies of "pc" used to be trimmed one by one, then collapse to a
+  // single tag and pass. The raw list is capped first.
+  const res = parseInvestigationInput({
+    seg_from: D(1, 17),
+    seg_to: D(1, 19),
+    status: "open",
+    causes: new Array(MAX_CAUSES + 1).fill("pc"),
+    notes: "",
+  });
+  assert.equal(res.ok, false);
+});
+
+test("a new pin must be exactly two consecutive readings", () => {
+  // `between` is every reading timestamp in [from, to], oldest first.
+  assert.equal(isReadingPair([D(1, 17), D(1, 19)], D(1, 17), D(1, 19)), true);
+  assert.equal(isReadingPair([D(1, 17), D(1, 18), D(1, 19)], D(1, 17), D(1, 19)), false); // a reading inside
+  assert.equal(isReadingPair([D(1, 17)], D(1, 17), D(1, 19)), false); // no closing reading
+  assert.equal(isReadingPair([], D(5, 1), D(5, 3)), false); // invented stretch
+  assert.equal(isReadingPair([D(1, 17), D(1, 19)], D(1, 19), D(1, 17)), false); // reversed
 });

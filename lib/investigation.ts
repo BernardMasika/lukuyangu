@@ -191,9 +191,10 @@ export function parseInvestigationInput(
   if (!Array.isArray(b.causes) || !b.causes.every((c) => typeof c === "string")) {
     return fail("causes must be a list of text tags");
   }
+  // Cap what was sent before doing any work on it, not what survives.
+  if (b.causes.length > MAX_CAUSES) return fail(`at most ${MAX_CAUSES} causes`);
   const causes = normalizeCauses(b.causes as string[]);
   if (causes === null) return fail(`each cause must be 1 to ${MAX_TAG} characters`);
-  if (causes.length > MAX_CAUSES) return fail(`at most ${MAX_CAUSES} causes`);
   if (b.status === "solved" && causes.length === 0) {
     return fail("a solved pin needs at least one cause");
   }
@@ -239,6 +240,13 @@ export function parseRow(raw: Record<string, unknown>): InvestigationRow {
     created_at: String(raw.created_at ?? ""),
     updated_at: String(raw.updated_at ?? ""),
   };
+}
+
+/** Is (from, to) a real stretch: two readings with nothing logged between?
+ *  `between` is every reading timestamp in [from, to], oldest first. Stops a
+ *  hand-made request from pinning a stretch that never existed. */
+export function isReadingPair(between: string[], from: string, to: string): boolean {
+  return between.length === 2 && between[0] === from && between[1] === to;
 }
 
 /** Tags the user invented, offered as chips on every pin. */

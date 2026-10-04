@@ -11,6 +11,7 @@ import {
 } from "@/lib/ledger";
 import {
   customTags,
+  isReadingPair,
   mergeBoard,
   parseInvestigationInput,
   parseRow,
@@ -83,6 +84,27 @@ export async function PUT(req: NextRequest) {
   }
   const v = parsed.value;
   const now = new Date().toISOString();
+
+  // A new pin must be a real stretch: two readings with nothing between. A
+  // pin that already has a row stays editable even after its readings change,
+  // or the notes on a "readings changed" pin could never be updated.
+  const [between, existing] = await Promise.all([
+    db.execute({
+      sql: "SELECT created_at FROM readings WHERE created_at >= ? AND created_at <= ? ORDER BY created_at ASC LIMIT 3",
+      args: [v.seg_from, v.seg_to],
+    }),
+    db.execute({
+      sql: "SELECT id FROM investigations WHERE seg_from = ? AND seg_to = ?",
+      args: [v.seg_from, v.seg_to],
+    }),
+  ]);
+  const times = between.rows.map((r) => String((r as unknown as { created_at: string }).created_at));
+  if (existing.rows.length === 0 && !isReadingPair(times, v.seg_from, v.seg_to)) {
+    return NextResponse.json(
+      { error: "seg_from and seg_to must be two consecutive readings" },
+      { status: 400 }
+    );
+  }
 
   // The snapshot is written once, on insert: it records the numbers as they
   // were when the user started investigating.
