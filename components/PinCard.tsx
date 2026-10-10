@@ -156,9 +156,9 @@ export default function PinCard({
             </span>
           </p>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {tr("pin.extra", lang, {
-              kwh: e.extraKwh,
-              tzs: Math.round(e.extraKwh * tzsPerKwh).toLocaleString(),
+            {tr(e.extraKwh < 0 ? "pin.below" : "pin.extra", lang, {
+              kwh: Math.abs(e.extraKwh),
+              tzs: Math.round(Math.abs(e.extraKwh) * tzsPerKwh).toLocaleString(),
             })}
           </p>
           <div className="flex flex-wrap gap-1.5 pt-1">

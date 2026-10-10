@@ -8,6 +8,7 @@ import {
   parseRow,
   customTags,
   isReadingPair,
+  causeDraws,
   MAX_NOTES,
   MAX_CAUSES,
   type InvestigationRow,
@@ -245,4 +246,26 @@ test("origin is read and validated, defaulting to auto", () => {
 
   assert.equal(parseRow({ id: 1, seg_from: "a", seg_to: "b", origin: "manual" }).origin, "manual");
   assert.equal(parseRow({ id: 1, seg_from: "a", seg_to: "b" }).origin, "auto"); // rows from before the column
+});
+
+test("causeDraws: dips and spikes both measure a draw, ambiguous pins are skipped", () => {
+  const ev = (extraKwh: number, activeHours: number) =>
+    ({ ...spike, extraKwh, activeHours }) as Spike;
+  const pin = (causes: string[], evidence: Spike | null) =>
+    ({ evidence, row: row({ causes }) }) as Parameters<typeof causeDraws>[0][number];
+
+  const draws = causeDraws([
+    pin(["pc"], ev(-0.7, 7)), // PC off overnight: 0.1 kWh an hour saved
+    pin(["pc"], ev(0.3, 3)), // PC on hard: 0.1 kWh an hour extra
+    pin(["pc", "fridge"], ev(2, 2)), // two causes: cannot split, skipped
+    pin(["pc", "unknown"], ev(2, 2)), // something else too: skipped
+    pin(["falseAlarm"], ev(1, 1)), // not a load
+    pin(["pc"], null), // no numbers
+    pin(["multicooker"], ev(0.9, 1)),
+  ]);
+
+  assert.deepEqual(draws, [
+    { cause: "multicooker", kwhPerHour: 0.9, pins: 1, hours: 1 },
+    { cause: "pc", kwhPerHour: 0.1, pins: 2, hours: 10 },
+  ]);
 });

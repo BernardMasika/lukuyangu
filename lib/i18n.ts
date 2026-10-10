@@ -399,6 +399,7 @@ const t: Record<string, { sw: string; en: string }> = {
     en: "Between {from} and {to} the meter barely moved, {rate} kWh a day instead of {baseline}. Power may have been out while you were away.",
   },
   "detect.outageYes": { sw: "Ndiyo, sajili", en: "Yes, log it" },
+  "detect.outageElse": { sw: "Hapana, kitu kingine", en: "No, something else" },
   "detect.dismiss": { sw: "Ondoa", en: "Dismiss" },
   "detect.missingTitle": { sw: "Kuna ununuzi haukusajiliwa?", en: "Is a purchase missing?" },
   "detect.missingBody": {
@@ -430,8 +431,8 @@ const t: Record<string, { sw: string; en: string }> = {
   "detect.outageEndYes": { sw: "Tumia {time}", en: "Use {time}" },
   "investigate.title": { sw: "Ubao wa Uchunguzi", en: "Investigation Board" },
   "investigate.description": {
-    sw: "Vipindi ambavyo matumizi yalipanda ghafla. Andika unachoshuku, kisha funga kwa sababu.",
-    en: "Stretches where usage jumped. Write down what you suspect, then close each one with a cause.",
+    sw: "Vipindi ambavyo matumizi yalipanda au yalishuka ghafla. Andika unachoshuku, kisha funga kwa sababu.",
+    en: "Stretches where usage jumped or dropped. Write down what you suspect, then close each one with a cause.",
   },
   "investigate.open": { sw: "Wazi", en: "Open" },
   "investigate.solved": { sw: "Zimetatuliwa ({count})", en: "Solved ({count})" },
@@ -453,6 +454,17 @@ const t: Record<string, { sw: string; en: string }> = {
   "investigate.loadFailed": { sw: "Imeshindwa kupakia ubao.", en: "Could not load the board." },
   "pin.ratio": { sw: "mara {ratio} ya kawaida", en: "{ratio}× normal" },
   "pin.extra": { sw: "+{kwh} kWh zaidi ya kawaida, takriban TZS {tzs}", en: "+{kwh} kWh above normal, about TZS {tzs}" },
+  "pin.below": { sw: "kWh {kwh} chini ya kawaida, takriban TZS {tzs} zimeokolewa", en: "{kwh} kWh below normal, about TZS {tzs} saved" },
+  "investigate.drawsTitle": { sw: "Kila sababu inagharimu kiasi gani", en: "What each cause costs" },
+  "investigate.drawsHint": {
+    sw: "Kutoka alama zenye sababu moja tu. Kipindi tulivu kinaonyesha kifaa kikiwa kimezimwa, mpando ukiwa kimewashwa.",
+    en: "From pins with exactly one cause. A quiet stretch shows the thing switched off, a spike shows it switched on.",
+  },
+  "investigate.drawLine": {
+    sw: "takriban kWh {kwh} kwa saa, kila saa moja kwa siku ni takriban TZS {tzs} kwa mwezi",
+    en: "about {kwh} kWh an hour, each daily hour of use is about TZS {tzs} a month",
+  },
+  "investigate.drawBasis": { sw: "alama {pins}, saa {hours}", en: "{pins} pin(s), {hours} h" },
   "pin.noNumbers": { sw: "Takwimu hazipatikani", en: "Numbers unavailable" },
   "pin.new": { sw: "Mpya", en: "New" },
   "pin.manual": { sw: "Umeiweka wewe", en: "Pinned by you" },

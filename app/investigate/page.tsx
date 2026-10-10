@@ -6,7 +6,7 @@ import PinCard from "@/components/PinCard";
 import { markDismissed } from "@/components/Detections";
 import { tr, type Lang } from "@/lib/i18n";
 import { formatDateEAT, formatDateTimeEAT, getTimePeriod } from "@/lib/utils";
-import type { Pin } from "@/lib/investigation";
+import { causeDraws, STARTER_CAUSES, type Pin } from "@/lib/investigation";
 import type { Spike } from "@/lib/ledger";
 
 interface StripItem {
@@ -66,6 +66,10 @@ export default function Investigate() {
         markDismissed(
           data.pins.filter((p) => p.status === "new").map((p) => `spike:${p.from}:${p.to}`)
         );
+        // Arrived from a Dashboard card that just pinned a stretch: open on it.
+        const jump = new URLSearchParams(window.location.search).get("pin");
+        const target = jump && data.pins.find((p) => p.from === jump);
+        if (target) setTimeout(() => jumpToPin(target.number), 60);
       })
       .catch(() => alive && setFailed(true));
     return () => {
@@ -116,6 +120,8 @@ export default function Investigate() {
   const solved = board
     ? board.pins.filter((p) => p.status === "solved").sort((a, b) => b.number - a.number)
     : [];
+
+  const draws = board ? causeDraws(board.pins) : [];
 
   return (
     <div className="space-y-4">
@@ -246,6 +252,39 @@ export default function Investigate() {
             ))}
           </div>
         </details>
+      )}
+
+      {draws.length > 0 && (
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            {tr("investigate.drawsTitle", lang)}
+          </h2>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            {tr("investigate.drawsHint", lang)}
+          </p>
+          <ul className="mt-3 space-y-2">
+            {draws.map((d) => (
+              <li key={d.cause} className="text-sm">
+                <span className="font-medium text-zinc-800 dark:text-zinc-100">
+                  {(STARTER_CAUSES as readonly string[]).includes(d.cause)
+                    ? tr(`cause.${d.cause}`, lang)
+                    : d.cause}
+                </span>
+                <span className="text-zinc-600 dark:text-zinc-300">
+                  {", "}
+                  {tr("investigate.drawLine", lang, {
+                    kwh: d.kwhPerHour,
+                    // ponytail: 30-day month at the board's average TZS/kWh, no tariff bands
+                    tzs: Math.round(d.kwhPerHour * 30 * board!.tzsPerKwh).toLocaleString(),
+                  })}
+                </span>
+                <span className="block text-xs text-zinc-400 dark:text-zinc-500">
+                  {tr("investigate.drawBasis", lang, { pins: d.pins, hours: d.hours })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

@@ -276,3 +276,42 @@ export function customTags(rows: InvestigationRow[]): string[] {
   }
   return [...seen].sort((a, b) => a.localeCompare(b));
 }
+
+export interface CauseDraw {
+  cause: string;
+  /** kWh an hour the cause adds when on, the same as it saves when off */
+  kwhPerHour: number;
+  /** how many pins this rests on: one pin is a hint, several are a measurement */
+  pins: number;
+  hours: number;
+}
+
+/**
+ * What each cause draws, measured from the pins tagged with it. A spike shows
+ * the load switched on (kWh above normal), a quiet stretch shows it switched
+ * off (kWh below normal); either way |extra| / powered hours is its draw.
+ *
+ * Only pins with exactly one real cause count: "PC + fridge" cannot say how
+ * much was which, and "PC + unknown" admits something else was going on.
+ */
+export function causeDraws(pins: Pick<Pin, "evidence" | "row">[]): CauseDraw[] {
+  const totals = new Map<string, { kwh: number; hours: number; pins: number }>();
+  for (const { evidence: e, row } of pins) {
+    if (!e || !row || e.activeHours <= 0) continue;
+    const causes = row.causes.filter((c) => c !== "falseAlarm");
+    if (causes.length !== 1 || causes[0] === "unknown") continue;
+    const t = totals.get(causes[0]) ?? { kwh: 0, hours: 0, pins: 0 };
+    t.kwh += Math.abs(e.extraKwh);
+    t.hours += e.activeHours;
+    t.pins += 1;
+    totals.set(causes[0], t);
+  }
+  return [...totals]
+    .map(([cause, t]) => ({
+      cause,
+      kwhPerHour: Math.round((t.kwh / t.hours) * 100) / 100,
+      pins: t.pins,
+      hours: Math.round(t.hours * 10) / 10,
+    }))
+    .sort((a, b) => a.cause.localeCompare(b.cause));
+}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLang, useData } from "./Providers";
 import { tr } from "@/lib/i18n";
 import { formatDateTimeEAT } from "@/lib/utils";
@@ -87,7 +88,7 @@ function Card({
       <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
         {body}
       </p>
-      {children && <div className="mt-2 flex gap-2">{children}</div>}
+      {children && <div className="mt-2 flex flex-wrap gap-2">{children}</div>}
     </div>
   );
 }
@@ -102,6 +103,7 @@ export default function Detections() {
   const { stats, outages: logged, refresh } = useData();
   const { dismissed, dismiss } = useDismissals();
   const [busy, setBusy] = useState<string | null>(null);
+  const router = useRouter();
 
   if (!stats) return null;
 
@@ -145,6 +147,33 @@ export default function Detections() {
       });
       dismiss(key);
       await refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Not a power cut: pin the stretch on the board so the user can name what
+   *  was off. The board measures each cause's draw from pins like this one. */
+  const pinQuiet = async (from: string, to: string) => {
+    const key = `outage:${from}:${to}`;
+    setBusy(key);
+    try {
+      const res = await fetch("/api/investigations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seg_from: from,
+          seg_to: to,
+          status: "open",
+          origin: "manual",
+          causes: [],
+          notes: "",
+          snapshot: null,
+        }),
+      });
+      if (!res.ok) return;
+      dismiss(key);
+      router.push(`/investigate?pin=${encodeURIComponent(from)}`);
     } finally {
       setBusy(null);
     }
@@ -226,6 +255,13 @@ export default function Detections() {
               className={actionClass}
             >
               {tr("detect.outageYes", lang)}
+            </button>
+            <button
+              onClick={() => pinQuiet(o.from, o.to)}
+              disabled={busy === key}
+              className={quietClass}
+            >
+              {tr("detect.outageElse", lang)}
             </button>
             <button onClick={() => dismiss(key)} className={quietClass}>
               {tr("detect.dismiss", lang)}
